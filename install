@@ -1,0 +1,61 @@
+#!/bin/bash
+#
+# Builds EZDisplay from source and installs it.
+#
+# There is no binary release, so installing means archiving the Xcode project
+# and exporting the result into the destination directory. Set EZDISPLAY_PATH
+# to install somewhere other than /Applications.
+
+set -u
+
+DESTINATION="${EZDISPLAY_PATH:-/Applications}"
+
+# Asks until the answer is recognisable. An empty answer takes `default`, so the
+# capitalised letter in the prompt is what pressing Return does.
+confirm() {
+    local prompt="$1" default="$2" answer
+
+    while true; do
+        read -r -p "$prompt" answer
+        [[ -z $answer ]] && answer="$default"
+
+        case "$answer" in
+            [Yy]*) return 0 ;;
+            [Nn]*) return 1 ;;
+            *)     echo "Please answer y or n." ;;
+        esac
+    done
+}
+
+confirm "Install EZDisplay to ${DESTINATION}? (Y/n): " y || exit 1
+
+# A running copy keeps the old bundle open, and the export would replace the app
+# underneath it.
+osascript -e 'quit app "EZDisplay"' 2>/dev/null
+
+staging=$(mktemp -d)
+trap 'rm -rf "$staging"' EXIT
+
+# xcodebuild puts its progress on stdout and its complaints on stderr. Only the
+# second is worth keeping, and only if something goes wrong.
+if ! log=$(xcodebuild -archivePath "${staging}/EZDisplay" \
+                      -scheme EZDisplay \
+                      archive 2>&1 >/dev/null) ||
+   ! log=$(xcodebuild -exportArchive \
+                      -archivePath "${staging}/EZDisplay.xcarchive" \
+                      -exportPath "$DESTINATION" \
+                      -exportOptionsPlist etc/export.plist 2>&1 >/dev/null)
+then
+    printf 'The build failed, so nothing was installed.\n\n%s\n' "$log" >&2
+    exit 100
+fi
+
+# xcodebuild reports success on the export, not on what landed, so check for the
+# bundle before claiming it is installed.
+if [[ ! -d ${DESTINATION}/EZDisplay.app ]]; then
+    echo "The export reported success but ${DESTINATION}/EZDisplay.app is not there." >&2
+    exit 100
+fi
+
+open "${DESTINATION}/EZDisplay.app"
+echo "EZDisplay is installed in ${DESTINATION}."

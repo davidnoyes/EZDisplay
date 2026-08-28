@@ -1,0 +1,19 @@
+# Build products, wherever they land.
+build/
+Build/
+DerivedData/
+*.app
+*.xcarchive
+*.o
+
+# Per-user Xcode state, which is not shared between developers.
+xcuserdata/
+*.xcuserdatad
+*.xcscmblueprint
+
+# Editor and Finder litter.
+*.swp
+.DS_Store
+
+# Local agent settings and throwaway probe programs.
+.claude/

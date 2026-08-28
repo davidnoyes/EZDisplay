@@ -1,0 +1,84 @@
+#!/bin/bash
+#
+# Removes EZDisplay.
+#
+# The custom resolutions it can create live in system-wide display override
+# files that outlive the app, so this offers to undo them first — while the
+# binary that knows how to do it is still installed. Set EZDISPLAY_PATH if the
+# app is somewhere other than /Applications.
+
+set -u
+
+DESTINATION="${EZDISPLAY_PATH:-/Applications}"
+APP="${DESTINATION}/EZDisplay.app"
+PREFERENCES="${HOME}/Library/Preferences/io.github.davidnoyes.ezdisplay.plist"
+BACKUPS="${HOME}/Library/Application Support/io.github.davidnoyes.ezdisplay/Backups"
+
+# Asks until the answer is recognisable. An empty answer takes `default`, so the
+# capitalised letter in the prompt is what pressing Return does.
+confirm() {
+    local prompt="$1" default="$2" answer
+
+    while true; do
+        read -r -p "$prompt" answer
+        [[ -z $answer ]] && answer="$default"
+
+        case "$answer" in
+            [Yy]*) return 0 ;;
+            [Nn]*) return 1 ;;
+            *)     echo "Please answer y or n." ;;
+        esac
+    done
+}
+
+confirm "Uninstall EZDisplay from ${DESTINATION}? (y/N): " n || exit 1
+
+cat <<'EOF'
+
+EZDisplay's custom resolutions are stored in system-wide display override files.
+Removing them restores those displays to their default resolutions, and needs an
+administrator password. Leaving them keeps the overrides after EZDisplay is
+gone.
+
+Only override files EZDisplay created are removed. Any that another tool created
+are listed and left alone, so that tool's settings survive.
+
+EOF
+
+removeOverrides=no
+confirm "Remove EZDisplay's display resolution overrides? (y/N): " n && removeOverrides=yes
+
+osascript -e 'quit app "EZDisplay"' 2>/dev/null
+
+restoreNote="Your display overrides were left in place."
+if [[ $removeOverrides == yes ]]; then
+    if "${APP}/Contents/MacOS/EZDisplay" --restore-all; then
+        restoreNote="The display overrides EZDisplay created were removed, as reported
+above. A reboot may be required before those displays return to their default
+resolution."
+    else
+        restoreNote="Your display overrides could NOT be removed; they are still in
+place. The backups below are untouched."
+    fi
+fi
+
+if ! rm -rf "$APP"; then
+    echo "Could not remove ${APP}; nothing else was changed." >&2
+    exit 1
+fi
+
+# cfprefsd owns the preferences file and will write its cached copy back over a
+# plain `rm`, so ask it to forget the domain first.
+defaults delete io.github.davidnoyes.ezdisplay 2>/dev/null
+rm -f "$PREFERENCES"
+
+cat <<EOF
+
+Uninstall finished. ${restoreNote}
+
+Your preferences were removed. Any backup of a display's original settings is
+kept, in:
+    ${BACKUPS}
+just in case. A backup is only taken when one is needed, so not seeing that
+folder is normal.
+EOF
