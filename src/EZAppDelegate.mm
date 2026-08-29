@@ -31,6 +31,7 @@ static const uint32_t kMaxDisplays = 0x10;
 - (void) displaysReconfigured;
 - (void) prefsChanged;
 - (void) toggleHDR: (NSMenuItem*) sender;
+- (void) setColorMode: (ColorModeMenuItem*) sender;
 - (void) scheduleMenuRefresh;
 - (void) settledMenuRefresh;
 - (NSMutableArray<ResMenuItem*>*) thin: (NSArray<ResMenuItem*>*) items
@@ -40,8 +41,7 @@ static const uint32_t kMaxDisplays = 0x10;
                         title: (NSString*) title
                          from: (NSArray<ResMenuItem*>*) deduped
                         hidpi: (BOOL) hidpi
-                           cw: (int) cw ch: (int) ch cs: (float) cs
-                       hdrFit: (EZHDRFitMap*) hdrFit;
+                           cw: (int) cw ch: (int) ch cs: (float) cs;
 @end
 
 
@@ -50,16 +50,6 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
                                     void *app_delegate)
 {
     EZAppDelegate *appDelegate = (__bridge EZAppDelegate*)app_delegate;
-    // The flags matter here and nowhere else in this callback. An HDR fit map
-    // costs ~370ms of IOKit to build and stays true across a mode change, so it
-    // must survive one — this fires more than once for a single resolution
-    // change, and paying that each time is a visible stall. A display arriving,
-    // leaving, or being enabled or disabled is the case that can change what a
-    // display advertises, including the same monitor coming back on another
-    // cable, so those drop the maps.
-    if (change_flags & (kCGDisplayAddFlag | kCGDisplayRemoveFlag |
-                        kCGDisplayEnabledFlag | kCGDisplayDisabledFlag))
-        [EZHDRFitMap invalidateCaches];
     [appDelegate displaysReconfigured];
 }
 
@@ -102,6 +92,7 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 - (void) displaysReconfigured
 {
     [nativeInfoCache removeAllObjects];
+    [EZColorModes invalidateCaches];
     [self refreshStatusMenu];
 }
 
@@ -156,7 +147,6 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
                          from: (NSArray<ResMenuItem*>*) deduped
                         hidpi: (BOOL) hidpi
                            cw: (int) cw ch: (int) ch cs: (float) cs
-                       hdrFit: (EZHDRFitMap*) hdrFit
 {
     NSMutableArray<ResMenuItem*>* group = [NSMutableArray new];
     for (ResMenuItem* item in deduped)
@@ -173,10 +163,6 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     {
         ResMenuItem* mi = [item copyWithZone: nil];
         [mi applyResolutionTitle: NO];
-        // Most of a display's resolutions live only here — the top level is
-        // thinned to `curatedCount` — so leaving this untagged would answer the
-        // question for six rows and stay silent for the rest.
-        [self tagItem: mi withHDRFrom: hdrFit];
         if ([mi isResolutionW: cw height: ch scale: cs])
             [mi setState: NSControlStateValueOn];
         [menu addItem: mi];
@@ -269,14 +255,6 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 
         [statusMenu addItem: [NSMenuItem separatorItem]];
 
-        // What HDR costs at each resolution and refresh rate. Built once per
-        // display here rather than per item: it scans IOKit, and the two loops
-        // below both ask it. nil on a display with no AV interface, which the
-        // helper below turns into no tag at all.
-        EZHDRFitMap* hdrFit = [EZHDRFitMap mapForDisplay: display
-                                               nativeWidth: nativeW
-                                              nativeHeight: nativeH];
-
         // Dedup by geometry (width, height, scale). Representative mode prefers
         // the current refresh rate, otherwise the highest available.
         NSMutableDictionary<NSString*, ResMenuItem*>* byGeom = [NSMutableDictionary new];
@@ -335,14 +313,10 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
             ResMenuItem* mi = [item copyWithZone: nil];
             BOOL isNative = (nativeW > 0 && [mi width] == nativeW && [mi height] == nativeH && ![mi isHiDPI]);
             if (isNative)
-                [mi setTitle: [NSString stringWithFormat: @"%d × %d    Native", [mi width], [mi height]]];
+                [mi setTitle: [NSString stringWithFormat: @"%d × %d", [mi width], [mi height]]
+                      tagged: @"Native"];
             else
                 [mi applyResolutionTitle: YES];
-            // The rate this row would apply is the representative one the dedup
-            // above picked, so the tag describes what clicking actually does
-            // rather than the resolution in the abstract. The Refresh Rate
-            // submenu is where the rest of the rates get their own answer.
-            [self tagItem: mi withHDRFrom: hdrFit];
             if ([mi isResolutionW: cw height: ch scale: cs])
                 [mi setState: NSControlStateValueOn];
             [statusMenu addItem: mi];
@@ -353,9 +327,9 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
         // --- More Resolutions submenu (full, grouped) ---
         {
             NSMenu* more = [[NSMenu alloc] initWithTitle: @""];
-            [self addResolutionGroupTo: more title: @"Retina (HiDPI)" from: deduped hidpi: YES cw: cw ch: ch cs: cs hdrFit: hdrFit];
+            [self addResolutionGroupTo: more title: @"Retina (HiDPI)" from: deduped hidpi: YES cw: cw ch: ch cs: cs];
             if (showStandard)
-                [self addResolutionGroupTo: more title: @"Standard" from: deduped hidpi: NO cw: cw ch: ch cs: cs hdrFit: hdrFit];
+                [self addResolutionGroupTo: more title: @"Standard" from: deduped hidpi: NO cw: cw ch: ch cs: cs];
 
             [more addItem: [NSMenuItem separatorItem]];
             [more addItem: [[EditDisplayPlistItem alloc] initWithTitle: @"Edit Custom…"
@@ -391,10 +365,6 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
                 {
                     ResMenuItem* mi = [item copyWithZone: nil];
                     [mi applyRefreshRateTitle];
-                    // The point of the whole feature: these rows differ only by
-                    // refresh rate, and that is exactly what decides whether HDR
-                    // fits down the cable uncompressed.
-                    [self tagItem: mi withHDRFrom: hdrFit];
                     if ([mi refreshRate] == currentRefreshRate)
                         [mi setState: NSControlStateValueOn];
                     [rates addItem: mi];
@@ -427,6 +397,24 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
             [statusMenu addItem: hdr];
         }
 
+        // --- Color Mode submenu ---
+        // Beside HDR rather than only in Preferences, because it is the same
+        // kind of decision about the same link, and going through a window to
+        // make it was the long way round. The rows are built by EZColorModeUI,
+        // so they are the ones Preferences shows, in the same order.
+        //
+        // Empty until it opens, and deliberately: reading the modes is slow and
+        // the answer is worthless if the display was asleep when it was read.
+        //
+        // Not offered for the internal panel, which has no AV interface to ask
+        // and would open on nothing every time. Every other display gets the
+        // item, because finding out whether it has modes is the expensive call
+        // this is avoiding.
+        if (!CGDisplayIsBuiltin(display))
+            [statusMenu addItem: [EZColorModeUI menuItemForDisplay: display
+                                                            target: self
+                                                            action: @selector(setColorMode:)]];
+
         [statusMenu addItem: [NSMenuItem separatorItem]];
     }
 
@@ -446,34 +434,6 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     [statusMenu setDelegate: self];
     [statusItem setMenu: statusMenu];
 }
-
-
-
-// Appends the HDR tag to a menu item whose title is already set, so a
-// resolution or a refresh rate says what picking it would cost on the cable.
-//
-// Silent when the answer is no — no AV interface, or no HDR at that timing. A
-// display that cannot do HDR anywhere therefore gets no tags at all rather than
-// "SDR" repeated down the menu, matching how the HDR item itself is simply
-// absent for such a display. A mode whose timing could not be resolved is not
-// silent, though: it gets the same em dash the Preferences table shows, because
-// "we could not tell" must not read as "no".
-- (void) tagItem: (ResMenuItem*) item withHDRFrom: (EZHDRFitMap*) map
-{
-    if (!map) return;
-
-    // Pixels, not points: a HiDPI mode is negotiated on the cable at its
-    // backing size, so 2752 × 1152 Retina is a 5504 × 2304 signal.
-    int pxW = (int) lroundf([item width]  * [item scale]);
-    int pxH = (int) lroundf([item height] * [item scale]);
-    EZHDRFit fit = [map fitForPixelWidth: pxW height: pxH refreshRate: [item refreshRate]];
-
-    NSString* badge = [EZHDRFitMap menuBadgeForFit: fit];
-    if (!badge) return;
-    [item setTitle: [NSString stringWithFormat: @"%@    %@", [item title], badge]];
-    [item setToolTip: [EZHDRFitMap explanationForFit: fit]];
-}
-
 
 
 - (void) editResolutions: (EditDisplayPlistItem *)sender {
@@ -600,27 +560,65 @@ static CGError applyMirroring(BOOL on)
         return;
     }
 
-    // Nothing was attempted, which past the guard above can only mean the display
-    // stopped supporting HDR since the menu was built — the item would not be
-    // here otherwise. Another stale menu, so answer it the same way: rebuild,
-    // which drops the item rather than leaving a dead one with a wrong tick.
-    if (![EZColorModes setHDREnabled: wanted forDisplay: display])
-    {
-        [self refreshStatusMenu];
-        return;
-    }
-
+    // On the shared apply queue rather than straight down the main thread, which
+    // is where this used to write. Choosing a colour mode now moves HDR as well
+    // — the transfer function belongs to it, not to the wire format — and that
+    // runs on the queue, so a click here while a colour mode is still landing
+    // would put two threads into SetHDRModeEnabled on one display with nothing
+    // deciding which of them wins.
+    //
+    // Which means the answer no longer arrives before the menu is rebuilt, so
+    // the wanted value is recorded first and taken back below on the one path
+    // where the write turns out not to have happened.
     pendingHDR[key] = @(wanted);
     [self scheduleMenuRefresh];
 
-    [SafeApply confirmWithTitle: (wanted ? @"Keep HDR on?" : @"Keep HDR off?")
-                         detail: @"The display is switching between HDR and SDR. "
-                                  "If the picture looks wrong, wait and it changes back."
-                         revert: ^{
-        [EZColorModes setHDREnabled: !wanted forDisplay: display];
-        self->pendingHDR[key] = @(!wanted);
-        [self scheduleMenuRefresh];
+    [SafeApply onApplyQueue: ^{
+        BOOL attempted = [EZColorModes setHDREnabled: wanted forDisplay: display];
+
+        if (!attempted)
+        {
+            // Nothing was attempted, which past the guard above can only mean the
+            // display stopped supporting HDR since the menu was built — the item
+            // would not be here otherwise. Another stale menu, so answer it the
+            // same way: rebuild, which drops the item rather than leaving a dead
+            // one with a wrong tick.
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self->pendingHDR removeObjectForKey: key];
+                [self refreshStatusMenu];
+            });
+            return;
+        }
+
+        // Puts itself on the main thread, so it is called from here rather than
+        // hopped to first.
+        [SafeApply confirmWithTitle: (wanted ? @"Keep HDR on?" : @"Keep HDR off?")
+                             detail: @"The display is switching between HDR and SDR. "
+                                      "If the picture looks wrong, wait and it changes back."
+                             revert: ^{
+            [SafeApply onApplyQueue: ^{
+                [EZColorModes setHDREnabled: !wanted forDisplay: display];
+            }];
+            self->pendingHDR[key] = @(!wanted);
+            [self scheduleMenuRefresh];
+        }];
     }];
+}
+
+// Everything a colour-mode change needs is already on the item, and the apply
+// itself is EZColorModeUI's — the same call Preferences makes, so the two cannot
+// drift on what a confirm-or-revert means here.
+//
+// No window to hang a problem sheet on, so problems come back as a modal. The
+// menu is rebuilt once the link has settled, for the same reason HDR is: the
+// filled marker moves to the row that is now running, and a stale menu would go
+// on pointing at the old one.
+- (void) setColorMode: (ColorModeMenuItem*) sender
+{
+    [EZColorModeUI apply: sender.mode
+               toDisplay: sender.display
+                      in: nil
+                onSettle: ^{ [self scheduleMenuRefresh]; }];
 }
 
 // The link takes a second or two to settle, so an immediate rebuild would read

@@ -25,6 +25,10 @@ typedef kern_return_t (*FnStartLink)(IOAVRef, const void *);
 typedef const char *(*FnEnumString)(uint32_t);
 typedef bool        (*FnHDRQuery)(CGDirectDisplayID);
 typedef void        (*FnHDRSet)(CGDirectDisplayID, bool);
+// Everything CoreDisplay knows about a display ID, including IODisplayLocation
+// — the registry path of the framebuffer it is attached to. That is what pairs
+// a display to one specific AV interface rather than to a model of monitor.
+typedef CFDictionaryRef (*FnDisplayInfo)(CGDirectDisplayID);
 
 static FnCreateWithService gCreateWithService;
 static FnCopy              gCopyColorElements;
@@ -39,6 +43,7 @@ static FnEnumString        gColorimetryString;
 static FnHDRQuery          gSupportsHDR;
 static FnHDRQuery          gIsHDREnabled;
 static FnHDRSet            gSetHDREnabled;
+static FnDisplayInfo       gDisplayInfo;
 
 // GetLinkData fills a struct describing the live link. Two of its fields are
 // verbatim copies of the ElementData blobs the enumerations hand back, so the
@@ -80,6 +85,7 @@ static void ResolveSymbols(void)
         gSupportsHDR           = (FnHDRQuery)dlsym(RTLD_DEFAULT, "CoreDisplay_Display_SupportsHDRMode");
         gIsHDREnabled          = (FnHDRQuery)dlsym(RTLD_DEFAULT, "CoreDisplay_Display_IsHDRModeEnabled");
         gSetHDREnabled         = (FnHDRSet)dlsym(RTLD_DEFAULT, "CoreDisplay_Display_SetHDRModeEnabled");
+        gDisplayInfo           = (FnDisplayInfo)dlsym(RTLD_DEFAULT, "CoreDisplay_DisplayCreateInfoDictionary");
     });
 }
 
@@ -89,6 +95,38 @@ static BOOL EnumerationAvailable(void)
     return gCreateWithService && gCopyColorElements && gCopyTimingElements
         && gCopyDisplayAttributes && gGetLinkData
         && gEncodingString && gRangeString && gEOTFString && gColorimetryString;
+}
+
+// The one expensive call in this file, and by a long way: measured at 358 ms
+// for a display advertising 60 timings, against 7 ms for everything else
+// supportedForDisplay: does — finding the interface, reading the link, matching
+// the current timing. Called on every open of the Color Mode submenu, it would
+// be a third of a second of frozen menu each time.
+//
+// What it returns is the set of timings the display advertises, which is a
+// property of the display and does not move: choosing a different resolution
+// changes which one is *in force*, and that is read from the link data at a
+// cost of about a millisecond. So the list is cached and the choice is not.
+//
+// Keyed on display ID, which is reused when one display replaces another, so
+// the cache is dropped on reconfiguration rather than trusted to age out.
+static NSMutableDictionary<NSNumber *, NSArray *> *gTimingCache;
+
+static NSArray *CopyTimingElementsCached(CGDirectDisplayID display, IOAVRef iface)
+{
+    NSNumber *key = @(display);
+    NSArray *cached = gTimingCache[key];
+    if (cached)
+        return cached;
+
+    NSArray *timings = (__bridge_transfer NSArray *)gCopyTimingElements(iface);
+    if (!timings)
+        return nil;
+
+    if (!gTimingCache)
+        gTimingCache = [NSMutableDictionary dictionary];
+    gTimingCache[key] = timings;
+    return timings;
 }
 
 // Applying needs everything reading needs, plus the setter. Separate from
@@ -103,6 +141,25 @@ static NSString *EnumName(FnEnumString fn, uint32_t value)
 {
     const char *s = fn ? fn(value) : NULL;
     return s ? @(s) : [NSString stringWithFormat:@"%u", value];
+}
+
+// The EOTF enum is private and unversioned, so this matches Apple's own name
+// for the value rather than a number read off one machine.
+//
+// EnumName falls back to the bare number, which matches neither test, so an
+// unrecognised transfer function reads as SDR. That is the wrong way round for
+// one caller taken alone — supportedForDisplay: drops a mode only when this
+// says HDR, so an unrecognised HDR transfer stays on offer even where the
+// system has ruled HDR out — and it is still the right default, because the
+// unrecognised case is not per-value. If gEOTFString itself is missing, every
+// value falls back to a number, every mode reads as HDR, and the list collapses
+// to the single current row on any display where HDR is unavailable. Losing the
+// whole list to a missing symbol is a worse failure than leaving one mode on
+// offer, and the mode is one the display advertised for this timing either way.
+static BOOL IsHDRTransfer(uint32_t eotf)
+{
+    NSString *name = EnumName(gEOTFString, eotf).uppercaseString;
+    return [name containsString:@"2084"] || [name containsString:@"HLG"];
 }
 
 
@@ -124,6 +181,7 @@ static NSString *EnumName(FnEnumString fn, uint32_t value)
         _colorimetry   = [element[@"Colorimetry"] unsignedIntValue];
         _isCurrent     = isCurrent;
         _isDerived     = [element[@"IsVirtual"] boolValue];
+        _isHDR         = IsHDRTransfer(_eotf);
         // Kept as separate strings as well as the joined label, so a caller can
         // lay the parts out as its own columns or badges. Apple's helpers are
         // the only names for these enums, and the numbers behind them are
@@ -157,51 +215,11 @@ static NSString *EnumName(FnEnumString fn, uint32_t value)
 // yielded first would attribute one monitor's colour mode to the other with no
 // sign anything was wrong. The whole iterator is drained so that case can be
 // recognised, and an ambiguous match reports nothing rather than guessing.
-static IOAVRef CopyAVInterfaceForDisplay(CGDirectDisplayID display)
-{
-    uint32_t wantVendor  = CGDisplayVendorNumber(display);
-    uint32_t wantProduct = CGDisplayModelNumber(display);
-
-    io_iterator_t iter = 0;
-    if (IOServiceGetMatchingServices(kIOMasterPortDefault,
-                                     IOServiceMatching("DCPAVVideoInterfaceProxy"),
-                                     &iter) != KERN_SUCCESS)
-        return NULL;
-
-    IOAVRef match = NULL;
-    BOOL ambiguous = NO;
-    io_service_t service;
-    while ((service = IOIteratorNext(iter)))
-    {
-        IOAVRef iface = gCreateWithService(kCFAllocatorDefault, service);
-        if (iface)
-        {
-            NSDictionary *attrs =
-                (__bridge_transfer NSDictionary *)gCopyDisplayAttributes(iface);
-            NSDictionary *product = attrs[@"ProductAttributes"];
-            BOOL matches = [product[@"LegacyManufacturerID"] unsignedIntValue] == wantVendor &&
-                           [product[@"ProductID"] unsignedIntValue] == wantProduct;
-            if (matches && !match)
-            {
-                match = iface;
-            }
-            else
-            {
-                if (matches) ambiguous = YES;
-                CFRelease(iface);
-            }
-        }
-        IOObjectRelease(service);
-    }
-    IOObjectRelease(iter);
-
-    if (ambiguous)
-    {
-        CFRelease(match);
-        return NULL;
-    }
-    return match;
-}
+//
+// Several interfaces are not on their own evidence of several monitors: the DCP
+// exposes a proxy per stream, and a 34" Philips presents two of them carrying
+// byte-identical product attributes. See +matchIsAmbiguousWithInterfaces:, and
+// +preferredMatchIndexWithLiveness: for which of them to then read from.
 
 // Fills `linkData` with the live link description. NO if the interface will not
 // report it, or if it wrote further than this build expects.
@@ -216,6 +234,135 @@ static BOOL ReadLinkData(IOAVRef iface, uint8_t *linkData)
         if (linkData[i] != kLinkDataSentinel)
             return NO;   // struct outgrew this build's assumptions
     return YES;
+}
+
+// Whether this interface is the one attached to the live link. Defined as
+// "ReadLinkData will work", since that is the only thing the choice affects.
+static BOOL LinkIsLive(IOAVRef iface)
+{
+    uint8_t linkData[kLinkDataSize];
+    return ReadLinkData(iface, linkData);
+}
+
+// The registry node naming the port a display is attached to — "dispext0" for
+// the first external one, and the same token the AV proxies for that port carry
+// in their own registry path.
+//
+// This is what identifies a *monitor* rather than a model of monitor. Two of
+// the same display are on two different ports, so their proxies sit under
+// different nodes however identical their product attributes are.
+//
+// nil when CoreDisplay will not say, or when the location is not shaped the way
+// this expects — an Intel Mac, or a later macOS that renames these nodes. The
+// caller falls back to matching on product alone, which is where it was before.
+//
+// Assumes one port means one monitor, which is true of a direct connection and
+// is the only case this has been tested against. Two identical displays behind a
+// DisplayPort MST hub would presumably share a port node, and this would then
+// pick between them on liveness alone — the ambiguity it exists to prevent. Not
+// reproduced, because there is no such hub here; noted because the code reads as
+// though it had been ruled out, and it has not.
+static NSString *PortNodeForDisplay(CGDirectDisplayID display)
+{
+    ResolveSymbols();
+    if (!gDisplayInfo)
+        return nil;
+
+    NSDictionary *info = (__bridge_transfer NSDictionary *)gDisplayInfo(display);
+    NSString *location = info[@"IODisplayLocation"];
+    if (![location isKindOfClass:[NSString class]])
+        return nil;
+
+    // ".../AppleH15IO/dispext0@4000000/IOMobileFramebufferShim" — the component
+    // that starts "disp" and carries a unit address is the one.
+    for (NSString *component in [location componentsSeparatedByString:@"/"])
+    {
+        NSRange at = [component rangeOfString:@"@"];
+        if (at.location != NSNotFound && [component hasPrefix:@"disp"])
+            return [component substringToIndex:at.location];
+    }
+    return nil;
+}
+
+// Whether this service sits under `portNode`. The proxies for the first
+// external display carry "/dispext0:dcpav-video-interface-epic:0/" in their
+// path; the trailing colon is required so that dispext1 does not match
+// dispext10.
+static BOOL ServiceIsOnPort(io_service_t service, NSString *portNode)
+{
+    io_string_t path = {0};
+    if (IORegistryEntryGetPath(service, kIOServicePlane, path) != KERN_SUCCESS)
+        return NO;
+    return [@(path) containsString:[NSString stringWithFormat:@"/%@:", portNode]];
+}
+
+// How many online displays report this manufacturer and product.
+static NSUInteger CountDisplaysSharingProduct(uint32_t vendor, uint32_t product)
+{
+    CGDirectDisplayID ids[32];
+    uint32_t count = 0;
+    if (CGGetOnlineDisplayList((uint32_t)(sizeof(ids) / sizeof(ids[0])), ids, &count)
+        != kCGErrorSuccess)
+        return 0;
+
+    NSUInteger sharing = 0;
+    for (uint32_t i = 0; i < count; i++)
+        if (CGDisplayVendorNumber(ids[i]) == vendor && CGDisplayModelNumber(ids[i]) == product)
+            sharing++;
+    return sharing;
+}
+
+static IOAVRef CopyAVInterfaceForDisplay(CGDirectDisplayID display)
+{
+    uint32_t wantVendor  = CGDisplayVendorNumber(display);
+    uint32_t wantProduct = CGDisplayModelNumber(display);
+
+    io_iterator_t iter = 0;
+    if (IOServiceGetMatchingServices(kIOMasterPortDefault,
+                                     IOServiceMatching("DCPAVVideoInterfaceProxy"),
+                                     &iter) != KERN_SUCCESS)
+        return NULL;
+
+    // nil on anything this does not recognise, which costs only the fallback to
+    // matching on product alone.
+    NSString *portNode = PortNodeForDisplay(display);
+
+    // Held by the array, which keeps every candidate alive until one is chosen.
+    NSMutableArray *matched = [NSMutableArray array];
+    NSMutableArray<NSNumber *> *liveness = [NSMutableArray array];
+    NSMutableArray<NSNumber *> *onPort   = [NSMutableArray array];
+
+    io_service_t service;
+    while ((service = IOIteratorNext(iter)))
+    {
+        IOAVRef iface = gCreateWithService(kCFAllocatorDefault, service);
+        if (iface)
+        {
+            NSDictionary *attrs =
+                (__bridge_transfer NSDictionary *)gCopyDisplayAttributes(iface);
+            NSDictionary *product = attrs[@"ProductAttributes"];
+            if ([product[@"LegacyManufacturerID"] unsignedIntValue] == wantVendor &&
+                [product[@"ProductID"] unsignedIntValue] == wantProduct)
+            {
+                [matched addObject:(__bridge id)iface];
+                [liveness addObject:@(LinkIsLive(iface))];
+                [onPort addObject:@(portNode && ServiceIsOnPort(service, portNode))];
+            }
+            CFRelease(iface);
+        }
+        IOObjectRelease(service);
+    }
+    IOObjectRelease(iter);
+
+    NSUInteger chosen =
+        [EZColorModes preferredMatchIndexOnPort:onPort
+                                       liveness:liveness
+                                sharingDisplays:CountDisplaysSharingProduct(wantVendor,
+                                                                            wantProduct)];
+    if (chosen == NSNotFound)
+        return NULL;
+
+    return (IOAVRef)CFRetain((__bridge CFTypeRef)matched[chosen]);
 }
 
 // The element in `elements` whose ElementData matches `bytes` exactly.
@@ -234,10 +381,76 @@ static NSDictionary *ElementMatching(NSArray *elements, const uint8_t *bytes, si
 @interface EZColorModeRestorePoint ()
 @property (nonatomic) CGDirectDisplayID display;
 @property (nonatomic, copy) NSData *colorData;
+@property (nonatomic) BOOL hdrEnabled;
 @end
 
 @implementation EZColorModeRestorePoint
 @end
+
+
+// Puts macOS's HDR mode where a colour mode needs it, and waits for the link to
+// say so.
+//
+// The two are separate pieces of state and only one of them is ours. HDR mode is
+// what the compositor renders — SetHDRModeEnabled moves it, and macOS reconfigures
+// the link to match as a side effect. A colour mode is the wire format alone:
+// StartLink changes what the cable carries and tells the compositor nothing.
+//
+// Set one without the other and they disagree. Measured: with HDR enabled,
+// applying an SDR-gamma colour mode left the link on SDR gamma and
+// IsHDRModeEnabled still reporting 1 — so the compositor went on emitting PQ
+// while the cable declared plain gamma, and the display decoded one as the
+// other. That is the "colours are way off" case, and it is not a display fault.
+//
+// So the transfer function is not independently choosable: it belongs to the HDR
+// mode. Asking for a PQ colour mode is asking for HDR, and this grants it before
+// the link is touched, rather than leaving the two to contradict each other.
+//
+// Waits by polling, because the link reports the change about 30 ms later —
+// measured across six transitions, 24 to 38 ms — and a fixed sleep would be
+// either a guess that is too short or a stall that is mostly waste. Gives up
+// after two seconds and lets the caller apply anyway: the worst case is the
+// disagreement that was there before this function existed.
+static void SetHDRAndSettle(CGDirectDisplayID display, BOOL wanted)
+{
+    if (!gSetHDREnabled || !gIsHDREnabled)
+        return;
+    gSetHDREnabled(display, wanted);
+
+    for (int i = 0; i < 40; i++)
+    {
+        EZColorMode *now = [EZColorModes currentForDisplay:display];
+        if (now && now.isHDR == wanted)
+            return;
+        usleep(50 * 1000);
+    }
+}
+
+
+// The colour element with this ID at the timing now in force, or nil. Separate
+// from applying it because the answer is needed twice: once to find out whether
+// the mode wants HDR, and again after the HDR change, since that reconfigures
+// the link and the bytes have to be read against where it ended up.
+static NSDictionary *ElementWithID(CGDirectDisplayID display, int elementID)
+{
+    IOAVRef iface = CopyAVInterfaceForDisplay(display);
+    if (!iface)
+        return nil;
+
+    NSDictionary *found = nil;
+    uint8_t linkData[kLinkDataSize];
+    if (ReadLinkData(iface, linkData))
+    {
+        NSArray *timings = CopyTimingElementsCached(display, iface);
+        NSDictionary *timing = ElementMatching(timings, linkData + kTimingDataOffset,
+                                               kTimingDataSize);
+        for (NSDictionary *element in timing[@"ColorModes"])
+            if ([element[@"ID"] intValue] == elementID)
+                found = element;
+    }
+    CFRelease(iface);
+    return found;
+}
 
 
 // The write path. Everything above reads; this restarts the display link.
@@ -275,7 +488,7 @@ static EZColorModeChangeResult ApplyColorElementData(CGDirectDisplayID display,
     uint8_t linkData[kLinkDataSize];
     if (ReadLinkData(iface, linkData))
     {
-        NSArray *timings = (__bridge_transfer NSArray *)gCopyTimingElements(iface);
+        NSArray *timings = CopyTimingElementsCached(display, iface);
         NSDictionary *timing = ElementMatching(timings, linkData + kTimingDataOffset,
                                                kTimingDataSize);
         if (!ElementMatching(timing[@"ColorModes"], (const uint8_t *)colorData.bytes,
@@ -300,6 +513,74 @@ static EZColorModeChangeResult ApplyColorElementData(CGDirectDisplayID display,
 
 
 @implementation EZColorModes
+
++ (BOOL)matchIsAmbiguousWithInterfaces:(NSUInteger)matchingInterfaces
+                       sharingDisplays:(NSUInteger)displaysWithSameProduct
+{
+    // One interface leaves nothing to choose between, however many displays
+    // share the product. Several interfaces are only a problem when there is
+    // more than one display they could belong to; otherwise they are one
+    // monitor the DCP has exposed more than once.
+    //
+    // A zero display count means CGGetOnlineDisplayList failed. That is not
+    // evidence of a second monitor, and disabling colour mode on the strength
+    // of an unrelated error would be the wrong way to be wrong.
+    return matchingInterfaces > 1 && displaysWithSameProduct > 1;
+}
+
++ (NSUInteger)preferredMatchIndexWithLiveness:(NSArray<NSNumber *> *)liveness
+{
+    for (NSUInteger i = 0; i < liveness.count; i++)
+        if (liveness[i].boolValue)
+            return i;
+    return liveness.count ? 0 : NSNotFound;
+}
+
++ (NSUInteger)preferredMatchIndexOnPort:(NSArray<NSNumber *> *)onPort
+                               liveness:(NSArray<NSNumber *> *)liveness
+                        sharingDisplays:(NSUInteger)displaysWithSameProduct
+{
+    // The port is definitive where it is known, so the candidates on it are the
+    // only ones considered and there is nothing left to be ambiguous about.
+    NSMutableArray<NSNumber *> *livenessOnPort = [NSMutableArray array];
+    NSMutableArray<NSNumber *> *indices        = [NSMutableArray array];
+    for (NSUInteger i = 0; i < onPort.count; i++)
+        if (onPort[i].boolValue)
+        {
+            [livenessOnPort addObject:liveness[i]];
+            [indices addObject:@(i)];
+        }
+
+    if (indices.count)
+        return indices[[self preferredMatchIndexWithLiveness:livenessOnPort]].unsignedIntegerValue;
+
+    // No interface carries the port, so this is the product match alone and it
+    // has to fail closed for two of the same monitor exactly as it did before.
+    if ([self matchIsAmbiguousWithInterfaces:liveness.count
+                             sharingDisplays:displaysWithSameProduct])
+        return NSNotFound;
+
+    return [self preferredMatchIndexWithLiveness:liveness];
+}
+
++ (void)invalidateCaches
+{
+    gTimingCache = nil;
+}
+
++ (BOOL)shouldOfferMode:(BOOL)modeIsHDR
+           hdrAvailable:(BOOL)hdrAvailable
+              isCurrent:(BOOL)isCurrent
+{
+    return !modeIsHDR || hdrAvailable || isCurrent;
+}
+
++ (BOOL)shouldChangeHDRTo:(BOOL)wanted
+                     from:(BOOL)current
+             hdrAvailable:(BOOL)hdrAvailable
+{
+    return hdrAvailable && wanted != current;
+}
 
 + (nullable EZColorMode *)currentForDisplay:(CGDirectDisplayID)display
 {
@@ -343,7 +624,7 @@ static EZColorModeChangeResult ApplyColorElementData(CGDirectDisplayID display,
         // Valid combinations depend on the timing in force: the display-wide
         // element list includes modes this timing has no bandwidth for. Take
         // the current timing's own list instead.
-        NSArray *timings = (__bridge_transfer NSArray *)gCopyTimingElements(iface);
+        NSArray *timings = CopyTimingElementsCached(display, iface);
         NSDictionary *timing = ElementMatching(timings, linkData + kTimingDataOffset,
                                                kTimingDataSize);
         NSData *currentColorData = [NSData dataWithBytes:linkData + kColorDataOffset
@@ -352,11 +633,18 @@ static EZColorModeChangeResult ApplyColorElementData(CGDirectDisplayID display,
         // IDs, absent from what the display advertises — but on the test
         // display the only 12-bit HDR modes are flagged this way. Dropping them
         // would hide real options; they are marked instead.
+        // Read once rather than per element: it is the same display throughout,
+        // and it is a call into CoreDisplay.
+        BOOL hdrAvailable = [self supportsHDRForDisplay:display];
         for (NSDictionary *element in timing[@"ColorModes"])
         {
             BOOL isCurrent = [element[@"ElementData"] isEqualToData:currentColorData];
-            [result addObject:[[EZColorMode alloc] initWithElement:element
-                                                          isCurrent:isCurrent]];
+            EZColorMode *mode = [[EZColorMode alloc] initWithElement:element
+                                                           isCurrent:isCurrent];
+            if ([self shouldOfferMode:mode.isHDR
+                         hdrAvailable:hdrAvailable
+                            isCurrent:isCurrent])
+                [result addObject:mode];
         }
     }
     CFRelease(iface);
@@ -426,309 +714,126 @@ static EZColorModeChangeResult ApplyColorElementData(CGDirectDisplayID display,
     // snapshot instead. Against a call that blanks the screen for a second, a
     // spare GetLinkData costs nothing worth having.
     NSData *wanted = nil, *previous = nil;
+    BOOL wantsHDR = NO;
     uint8_t linkData[kLinkDataSize];
     if (ReadLinkData(iface, linkData))
     {
         previous = [NSData dataWithBytes:linkData + kColorDataOffset length:kColorDataSize];
-        NSArray *timings = (__bridge_transfer NSArray *)gCopyTimingElements(iface);
+        NSArray *timings = CopyTimingElementsCached(display, iface);
         NSDictionary *timing = ElementMatching(timings, linkData + kTimingDataOffset,
                                                kTimingDataSize);
         for (NSDictionary *element in timing[@"ColorModes"])
             if ([element[@"ID"] intValue] == elementID)
-                wanted = element[@"ElementData"];
+            {
+                wanted   = element[@"ElementData"];
+                wantsHDR = IsHDRTransfer([element[@"EOTF"] unsignedIntValue]);
+            }
     }
     CFRelease(iface);
 
     if (!wanted || !previous || [wanted isEqualToData:previous])
         return nil;
-    if (ApplyColorElementData(display, wanted) != EZColorModeChangeApplied)
+
+    // Captured before anything moves, because reverting has to undo both halves
+    // and the HDR half is what macOS will change the colour mode from underneath
+    // us if it is left disagreeing.
+    BOOL previousHDR  = [self isHDREnabledForDisplay:display];
+    BOOL hdrAvailable = [self supportsHDRForDisplay:display];
+    BOOL movingHDR    = [self shouldChangeHDRTo:wantsHDR
+                                           from:previousHDR
+                                   hdrAvailable:hdrAvailable];
+
+    // Needed and impossible, which is the one combination that must not fall
+    // through to the write. A mode whose transfer function wants the other HDR
+    // state, on a display that cannot reach it, has no coherent form: applying
+    // the wire format on its own is exactly the disagreement this function
+    // exists to prevent, so refuse instead and let the caller say so.
+    //
+    // Reachable from a stale menu — the list was built while HDR was available
+    // and the resolution has moved since. Not from a fresh one, because
+    // shouldOfferMode: only offers an unavailable HDR mode when it is the one
+    // already running, and applying that returns above as a no-op.
+    if (wantsHDR != previousHDR && !movingHDR)
         return nil;
+
+    // The transfer function belongs to macOS's HDR mode, not to the wire format
+    // — see SetHDRAndSettle. Asking for a PQ mode is asking for HDR, so grant it
+    // first; asking for a gamma mode is asking for HDR off, so take it away.
+    // Applying the wire format alone is what made the colours wrong.
+    if (movingHDR)
+    {
+        SetHDRAndSettle(display, wantsHDR);
+
+        // macOS reconfigured the link on its way through, so the element has to
+        // be found again against the timing it left behind. Same ID, and on the
+        // test display the same bytes, but that is not something to assume of a
+        // list that is per-timing by definition.
+        NSDictionary *again = ElementWithID(display, elementID);
+        if (again[@"ElementData"])
+            wanted = again[@"ElementData"];
+    }
+
+    // Often a no-op by the time it runs, and rightly so: the HDR change lands on
+    // each state's default colour mode, which is usually the one being asked
+    // for. ApplyColorElementData reports that as applied without restarting the
+    // link, so the display is not blanked twice to arrive where it already is.
+    EZColorModeChangeResult result = ApplyColorElementData(display, wanted);
+    if (result != EZColorModeChangeApplied)
+    {
+        // Put the HDR mode back rather than leave it moved for a colour mode
+        // that never took. Half a change is the state this whole function
+        // exists to avoid.
+        //
+        // Superseded is undone here too, though elsewhere it is the blameless
+        // outcome nobody should reverse. The difference is that this path also
+        // returns nil, so there is no restore point, no confirm panel, and no
+        // way back: leaving HDR moved would move it silently and permanently
+        // for a colour mode the user never got. Changing nothing is the honest
+        // report of having changed nothing.
+        if (movingHDR)
+            SetHDRAndSettle(display, previousHDR);
+        return nil;
+    }
 
     EZColorModeRestorePoint *point = [[EZColorModeRestorePoint alloc] init];
     point.display = display;
     point.colorData = previous;
+    point.hdrEnabled = previousHDR;
     return point;
 }
 
 + (EZColorModeChangeResult)restore:(EZColorModeRestorePoint *)point
 {
-    return point ? ApplyColorElementData(point.display, point.colorData)
-                 : EZColorModeChangeFailed;
-}
+    if (!point)
+        return EZColorModeChangeFailed;
 
-@end
+    BOOL currentHDR = [self isHDREnabledForDisplay:point.display];
+    BOOL movingHDR  = [self shouldChangeHDRTo:point.hdrEnabled
+                                         from:currentHDR
+                                 hdrAvailable:[self supportsHDRForDisplay:point.display]];
 
+    // The undo wants an HDR state the display can no longer reach, so there is
+    // no coherent half of it to put back. Twenty seconds is long enough for the
+    // resolution to have moved and taken HDR with it, and when it has, macOS has
+    // already chosen a colour element to suit — which is Superseded's meaning
+    // exactly, and why this reports it rather than a fault.
+    if (point.hdrEnabled != currentHDR && !movingHDR)
+        return EZColorModeChangeSuperseded;
 
-// Both enums are private and unversioned, so these match Apple's own name for
-// the value rather than a number read off one machine — the same approach the
-// badges in Preferences take. EnumName falls back to the bare number, which
-// matches neither test, so an unrecognised value fails both closed.
-static BOOL IsHDRTransfer(uint32_t eotf)
-{
-    NSString *name = EnumName(gEOTFString, eotf).uppercaseString;
-    return [name containsString:@"2084"] || [name containsString:@"HLG"];
-}
+    // HDR first and the colour mode second, the same order the apply used. The
+    // HDR change moves the colour mode on its own, so doing it the other way
+    // round would undo the restore that had just been made.
+    if (movingHDR)
+        SetHDRAndSettle(point.display, point.hdrEnabled);
 
-static BOOL IsFullColorEncoding(uint32_t encoding)
-{
-    return [EnumName(gEncodingString, encoding).uppercaseString hasPrefix:@"RGB"];
-}
+    EZColorModeChangeResult result = ApplyColorElementData(point.display, point.colorData);
 
-// What one link timing can do for HDR, judged the way the bandwidth wall shows
-// up: an element the timing lists is reachable, an element in
-// DSCRequiredColorElementIDs is reachable only with the link compressed, and
-// one in UnsafeColorElementIDs is not offered at all.
-//
-// DSCRequired means "needs compression", not "unavailable" — measured on the
-// test display, which runs 3440 × 1440 at 175 Hz in 10-bit PQ with macOS
-// engaging DSC to fit it.
-static EZHDRFit FitForTiming(NSDictionary *timing)
-{
-    NSSet *needsDSC  = [NSSet setWithArray:timing[@"DSCRequiredColorElementIDs"] ?: @[]];
-    NSSet *unsafeIDs = [NSSet setWithArray:timing[@"UnsafeColorElementIDs"] ?: @[]];
+    // And symmetrically with the apply: an undo whose colour half did not take
+    // is not an undo, so do not leave the HDR half moved on its own.
+    if (result != EZColorModeChangeApplied && movingHDR)
+        SetHDRAndSettle(point.display, currentHDR);
 
-    BOOL anyHDR = NO, fullFree = NO, fullDSC = NO;
-    for (NSDictionary *element in timing[@"ColorModes"])
-    {
-        if (!IsHDRTransfer([element[@"EOTF"] unsignedIntValue])) continue;
-        if ([unsafeIDs containsObject:element[@"ID"]]) continue;
-        anyHDR = YES;
-        if (!IsFullColorEncoding([element[@"PixelEncoding"] unsignedIntValue])) continue;
-        if ([element[@"Depth"] intValue] < 10) continue;
-        if ([needsDSC containsObject:element[@"ID"]]) fullDSC = YES;
-        else                                          fullFree = YES;
-    }
-
-    if (fullFree) return EZHDRFitFull;
-    if (fullDSC)  return EZHDRFitCompressed;
-    if (anyHDR)   return EZHDRFitReduced;
-    return EZHDRFitNone;
-}
-
-
-@interface EZHDRFitMap ()
-@property (nonatomic, copy) NSDictionary<NSString *, NSNumber *> *byGeometry;    // "WxH@Hz" -> EZHDRFit
-@property (nonatomic, copy) NSDictionary<NSNumber *, NSNumber *> *nativeByRate;  // Hz       -> EZHDRFit
-@end
-
-// Building a map is one IOAVVideoInterfaceCopyTimingElements call, and that call
-// was measured at 360–370 ms on the test display — near enough the entire cost of
-// the scan, with the service enumeration and the attribute reads around it coming
-// to under 10 ms between them. Long enough to be felt: refreshStatusMenu rebuilds
-// the whole menu on every display reconfiguration, which arrives more than once
-// for a single resolution change, and Preferences rebuilds on top of that. The
-// answer was the same every time, because the timing list is what the display
-// advertises rather than what it is running.
-//
-// Keyed by identity and not by display ID alone, because macOS recycles IDs: the
-// map built for the monitor that used to be display 2 must not answer for the one
-// that is display 2 now. A mismatch simply misses and rebuilds. The native size
-// is in the key for the same reason — it shapes the map's fallback table, so a
-// map built without one cannot answer for a caller that has one.
-//
-// Main thread only, like every caller and like the rest of this file.
-//
-// NSNull is "asked, and the answer was nothing", which has to be cached as
-// firmly as a map: the display that reports an unusable timing list has already
-// paid the 370 ms to find that out, and would pay it again on every rebuild.
-static NSMutableDictionary<NSString *, id> *sMapCache;
-
-@implementation EZHDRFitMap
-
-+ (nullable instancetype)mapForDisplay:(CGDirectDisplayID)display
-                           nativeWidth:(int)nativeWidth
-                          nativeHeight:(int)nativeHeight
-{
-    NSString *cacheKey = [NSString stringWithFormat:@"%u/%u/%u/%dx%d",
-                          display, CGDisplayVendorNumber(display),
-                          CGDisplayModelNumber(display), nativeWidth, nativeHeight];
-    if (!sMapCache)
-        sMapCache = [NSMutableDictionary dictionary];
-    id cached = sMapCache[cacheKey];
-    if (cached)
-        return cached == [NSNull null] ? nil : cached;
-
-    if (!EnumerationAvailable())
-        return nil;
-
-    // The two nils above this line are not cached and need not be: neither has
-    // reached the expensive call, and a display with no AV interface — the
-    // internal panel — costs only the service enumeration, measured at under a
-    // millisecond. Past this point every exit is cached, including the empty
-    // one below.
-    IOAVRef iface = CopyAVInterfaceForDisplay(display);
-    if (!iface)
-        return nil;
-    NSArray *timings = (__bridge_transfer NSArray *)gCopyTimingElements(iface);
-    CFRelease(iface);
-
-    NSMutableDictionary<NSString *, NSNumber *> *byGeometry = [NSMutableDictionary dictionary];
-    NSMutableDictionary<NSNumber *, NSNumber *> *nativeByRate = [NSMutableDictionary dictionary];
-
-    for (NSDictionary *timing in timings)
-    {
-        int    width  = [timing[@"HorizontalAttributes"][@"Active"] intValue];
-        int    height = [timing[@"VerticalAttributes"][@"Active"] intValue];
-        // 16.16 fixed point: 3932160 / 65536 = 60.
-        double rate   = [timing[@"VerticalAttributes"][@"SyncRate"] doubleValue] / 65536.0;
-        if (width <= 0 || height <= 0 || rate < 1)
-            continue;
-        int hz = (int)lround(rate);
-
-        // Several timings can share a geometry and a rate — 20 of the test
-        // display's 60 are such duplicates. Which of them macOS picks is not
-        // knowable from here, so the lowest wins: the enum runs worst to best.
-        //
-        // This is the lesser error, not a free one. If the duplicates disagree
-        // and macOS picks the better, a row that really does carry HDR shows
-        // nothing — wrong, and invisibly so. But the other direction promises
-        // HDR the link then fails to deliver, which is worse to be told. The
-        // test display's duplicates all agree, so neither case has been seen;
-        // this is a judgement about which way to be wrong, not a measurement.
-        NSNumber *fit = @(FitForTiming(timing));
-        NSString *key = [NSString stringWithFormat:@"%dx%d@%d", width, height, hz];
-        NSNumber *seen = byGeometry[key];
-        if (!seen || fit.integerValue < seen.integerValue)
-            byGeometry[key] = fit;
-
-        if (nativeWidth > 0 && width == nativeWidth && height == nativeHeight)
-        {
-            NSNumber *seenNative = nativeByRate[@(hz)];
-            if (!seenNative || fit.integerValue < seenNative.integerValue)
-                nativeByRate[@(hz)] = fit;
-        }
-    }
-
-    // An empty map is not a map of a display with no HDR — it is a display that
-    // told us nothing, which is the case this method promises to answer with
-    // nil. Returning the empty object instead would satisfy the caller's
-    // "do we have a map?" test and then answer Unknown for every row, which is
-    // precisely the column of a thousand dashes hiding the column exists to
-    // avoid. Covers a NULL timing list as well as one whose entries are all
-    // unusable.
-    if (byGeometry.count == 0)
-    {
-        sMapCache[cacheKey] = [NSNull null];
-        return nil;
-    }
-
-    EZHDRFitMap *map = [[EZHDRFitMap alloc] init];
-    map.byGeometry   = byGeometry;
-    map.nativeByRate = nativeByRate;
-    sMapCache[cacheKey] = map;
-    return map;
-}
-
-+ (void)invalidateCaches
-{
-    [sMapCache removeAllObjects];
-}
-
-// The desktop mode a user picks is not the signal the cable carries: macOS
-// negotiates a link timing for it. The rule was measured rather than found
-// documented — nothing cross-references a CoreGraphics mode to an IOAV timing,
-// and CGDisplayModeGetIODisplayModeID is a dense sequence unrelated to the
-// timing IDs. Five desktop modes were set on a 34" Philips and the live link
-// read back each time:
-//
-//   desktop  800 × 600  (px  800 × 600)  @ 100 -> link  800 × 600  @ 100
-//   desktop  960 × 540  (px 1920 × 1080) @ 120 -> link 1920 × 1080 @ 120
-//   desktop 1256 × 526  (px 2511 × 1051) @  60 -> link 3440 × 1440 @  60
-//   desktop  800 × 600  (px 1600 × 1200) @ 175 -> link 3440 × 1440 @ 175
-//   desktop 2752 × 1152 (px 5504 × 2304) @ 120 -> link 3440 × 1440 @ 120
-//
-// So: the timing whose active geometry equals the mode's pixel dimensions at
-// the same rate, and where there is none, the *native* timing at that rate.
-// Native, not the largest — the third case had a 5120 × 2880 timing available
-// at 60 Hz and did not use it.
-- (EZHDRFit)fitForPixelWidth:(int)width height:(int)height refreshRate:(int)refreshRate
-{
-    // A mode that does not state a rate cannot be resolved to a timing, and
-    // every rate here is a whole number of Hz on both sides.
-    if (refreshRate <= 0)
-        return EZHDRFitUnknown;
-
-    NSString *key = [NSString stringWithFormat:@"%dx%d@%d", width, height, refreshRate];
-    NSNumber *exact = _byGeometry[key];
-    if (exact)
-        return (EZHDRFit)exact.integerValue;
-
-    NSNumber *fallback = _nativeByRate[@(refreshRate)];
-    return fallback ? (EZHDRFit)fallback.integerValue : EZHDRFitUnknown;
-}
-
-+ (nullable NSString *)badgeForFit:(EZHDRFit)fit
-{
-    switch (fit)
-    {
-        case EZHDRFitFull:       return @"HDR";
-        case EZHDRFitCompressed: return @"HDR (DSC)";
-        case EZHDRFitReduced:    return @"HDR (reduced)";
-        // Two different silences, and they must not look alike. A dash says EZDisplay
-        // could not work out which link timing the mode would negotiate, so it
-        // has no answer; nothing at all says the answer is no. Collapsing them
-        // would let "we don't know" read as "no HDR here", which is a claim, and
-        // the wrong one. +menuBadgeForFit: below keeps that distinction, in the
-        // wording the menu needs, and sits here rather than beside the menu code
-        // so the two cannot come to disagree about what a blank row means.
-        case EZHDRFitUnknown:    return @"—";
-        // Nothing, rather than an "SDR" badge on every other row: a display with
-        // no HDR at any timing would otherwise gain a column of noise saying the
-        // same thing about all of it.
-        case EZHDRFitNone:       break;
-    }
-    return nil;
-}
-
-+ (nullable NSString *)menuBadgeForFit:(EZHDRFit)fit
-{
-    switch (fit)
-    {
-        // "capable", because the menu has no column header to say what the word
-        // is doing there, and because the same menu carries an HDR item that
-        // really does turn HDR on. A bare "HDR" on a resolution row therefore
-        // reads as a second way to switch it on, which is the one thing it is
-        // not: it says this mode has the bandwidth for HDR, whether or not HDR
-        // is on now. The table keeps the short form — its column header already
-        // supplies the noun, and repeating it in every cell is noise.
-        case EZHDRFitFull:       return @"HDR capable";
-        case EZHDRFitCompressed: return @"HDR capable (DSC)";
-        case EZHDRFitReduced:    return @"HDR capable (reduced)";
-        // The two silences keep their meanings from +badgeForFit:, but the dash
-        // cannot survive the move as a dash: the table's column header is what
-        // says which question it is declining to answer, and the menu has no
-        // header, so a row reading "3840 × 2160    100 Hz    —" leaves a stray
-        // character with nothing to attach it to. Say the noun instead. It still
-        // cannot be read as an offer to turn HDR on, because "unknown" is not
-        // something a row could do to the display.
-        case EZHDRFitUnknown:    return @"HDR unknown";
-        case EZHDRFitNone:       break;
-    }
-    return nil;
-}
-
-+ (nullable NSString *)explanationForFit:(EZHDRFit)fit
-{
-    switch (fit)
-    {
-        case EZHDRFitFull:
-            return @"HDR fits down the cable uncompressed, in 10-bit color with "
-                    "no thinning.";
-        case EZHDRFitCompressed:
-            return @"HDR needs more bandwidth than this resolution and refresh rate "
-                    "leave, so macOS compresses the signal (DSC) to fit it. Visually "
-                    "near-lossless, but a lower refresh rate avoids it.";
-        case EZHDRFitReduced:
-            return @"HDR is available here only with the color thinned or at 8 bits "
-                    "per channel. A lower resolution or refresh rate gives full "
-                    "10-bit color.";
-        case EZHDRFitUnknown:
-            return @"EZDisplay cannot tell what signal this mode negotiates, so it "
-                    "cannot say whether HDR fits. The display advertises no "
-                    "timing matching it.";
-        case EZHDRFitNone:       break;
-    }
-    return nil;
+    return result;
 }
 
 @end

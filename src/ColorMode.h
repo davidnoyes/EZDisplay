@@ -26,6 +26,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (readonly) uint32_t eotf;           // transfer function: 0 SDR gamma, PQ, HLG …
 @property (readonly) uint32_t colorimetry;    // BT.709, BT.2020 …
 @property (readonly) BOOL     isCurrent;      // the link's active colour mode
+// A PQ or HLG transfer function. Says only that this is one of the HDR modes,
+// not that HDR will look right in it.
+@property (readonly) BOOL     isHDR;
 // The display did not advertise this combination itself; the driver derived it.
 // Reported rather than hidden: on the test display the only 12-bit HDR modes
 // appear here, so dropping these would hide real options.
@@ -42,10 +45,12 @@ NS_ASSUME_NONNULL_BEGIN
 @property (readonly, copy) NSString *colorimetryName;
 @end
 
-// The colour mode a display link was running before EZDisplay changed it, so the
-// change can be undone through the identical call that made it. Opaque on
-// purpose: what it holds is a blob of private-API bytes, and the only useful
-// thing to do with one is hand it back to +restore:.
+// The state a display was in before EZDisplay changed its colour mode, so the
+// change can be undone through the identical call that made it: the link's
+// colour bytes, and macOS's HDR mode, since applying a colour mode moves that
+// too and half an undo is worse than none. Opaque on purpose — what it holds is
+// private-API bytes, and the only useful thing to do with one is hand it back to
+// +restore:.
 @interface EZColorModeRestorePoint : NSObject
 @property (readonly) CGDirectDisplayID display;
 @end
@@ -74,6 +79,13 @@ typedef NS_ENUM(NSInteger, EZColorModeChangeResult) {
 + (nullable EZColorMode *)currentForDisplay:(CGDirectDisplayID)display;
 // Every mode valid at the display's *current* timing, derived ones included.
 // Empty when unavailable. Re-read after a resolution or refresh-rate change.
+//
+// HDR modes are dropped when the system reports the display cannot do HDR where
+// it is now. The display's own element list is no guide to this: the test
+// Philips advertises the same PQ modes at all sixty of its link timings, down
+// to 640 × 480, so trusting it would offer an HDR mode at every resolution and
+// let the user apply one the system has already ruled out. CoreDisplay's
+// verdict is the only per-timing answer there is, and macOS owns the question.
 + (NSArray<EZColorMode *> *)supportedForDisplay:(CGDirectDisplayID)display;
 // The product name the display reports over the wire — "PHL 34M2C8600".
 //
@@ -87,6 +99,109 @@ typedef NS_ENUM(NSInteger, EZColorModeChangeResult) {
 // interface but no name on it, and for two identical monitors, where the match
 // is ambiguous and this fails closed like everything else here.
 + (nullable NSString *)productNameForDisplay:(CGDirectDisplayID)display;
+
+// Drops the cached per-display timing lists. Call on reconfiguration, which is
+// when a display ID can come to mean a different monitor.
+//
+// The lists are cached because reading one costs 358 ms — measured — against
+// 7 ms for the rest of a colour-mode read, and the Color Mode submenu would pay
+// it on every open. What a display advertises does not change under it; which
+// timing is in force does, and that is read fresh every time.
++ (void)invalidateCaches;
+
+// Whether more than one AV interface reporting the same product means more than
+// one monitor.
+//
+// It usually does not. The DCP exposes a proxy per stream, so a single display
+// can present several interfaces carrying byte-identical product attributes.
+// Treating that as two monitors reports nothing for a perfectly ordinary
+// display, taking the product name and colour mode down together. The count of
+// *displays* CoreGraphics reports for the product is what settles it.
+//
+// Deliberately not private: this is the judgement the colour-mode and HDR
+// features hang off, and the private-API path around it cannot be exercised by
+// a test.
++ (BOOL)matchIsAmbiguousWithInterfaces:(NSUInteger)matchingInterfaces
+                       sharingDisplays:(NSUInteger)displaysWithSameProduct;
+
+// Which of the matched AV interfaces to read from, given one liveness flag per
+// interface in the order the IOKit iterator yielded them.
+//
+// Recognising that several proxies are one monitor is only half of it, because
+// they are not interchangeable. Both of the test display's carry the same
+// product attributes and the same colour and timing elements, but only one is
+// attached to the live link; the other answers GetLinkData with
+// kIOReturnNoDevice. Taking the first is a coin toss, and on that display it
+// lands on the dead one — which reads as the display having no colour mode at
+// all, while everything built from the element dictionaries carries on working
+// and hides the fault.
+//
+// The first live interface, or the first match when none is live: a sleeping
+// display has no link and still has a product name and a timing list worth
+// reading. NSNotFound when nothing matched.
++ (NSUInteger)preferredMatchIndexWithLiveness:(NSArray<NSNumber *> *)liveness;
+
+// The same choice, but told which of the matched interfaces sit on the port the
+// display is actually attached to. One flag per interface in each array, in the
+// order the IOKit iterator yielded them.
+//
+// Product attributes identify a model, not a monitor, so two of the same
+// display cannot be told apart by them — which is why the ambiguous case used
+// to report no colour mode for either of them. The registry knows better: each
+// display hangs off a numbered port, the AV proxies for that port carry the
+// same node in their own path, and two identical monitors are necessarily on
+// two different ports.
+//
+// So the port wins outright wherever it is known, over both the product match
+// and liveness — a live interface on another port is another monitor's, and
+// choosing it would report its colour mode as this display's. Liveness only
+// orders the candidates within the right port.
+//
+// Where no interface carries the port — CoreDisplay would not say, or the
+// registry is not shaped the way this expects — the old rule applies unchanged,
+// fail-closed ambiguity check and all, so a display that worked before still
+// works.
++ (NSUInteger)preferredMatchIndexOnPort:(NSArray<NSNumber *> *)onPort
+                               liveness:(NSArray<NSNumber *> *)liveness
+                        sharingDisplays:(NSUInteger)displaysWithSameProduct;
+
+// Whether a mode the display advertises for the current timing belongs in the
+// list offered for it.
+//
+// The display's element list is no guide to HDR on its own: the test Philips
+// advertises the same PQ elements at all sixty of its timings, 640 × 480
+// included. Offering them all is how a list comes to invite the user to apply
+// an HDR mode the system has already ruled out — the inaccurate assessment this
+// replaced. Only CoreDisplay knows whether HDR is reachable where the display
+// is now, so an HDR mode is offered only when it says so.
+//
+// The mode the link is running is kept whatever the verdict. A list that omits
+// the current row contradicts itself, and hiding that row would hide the way
+// back off it.
+//
+// Deliberately not private, for the same reason as the two above: this is a
+// judgement worth testing, and the private-API path around it is not.
++ (BOOL)shouldOfferMode:(BOOL)modeIsHDR
+           hdrAvailable:(BOOL)hdrAvailable
+              isCurrent:(BOOL)isCurrent;
+
+// Whether applying a colour mode has to move macOS's HDR mode first.
+//
+// It does whenever the two disagree. A colour mode carries a transfer function,
+// and the transfer function is not the wire format's to choose: it belongs to
+// the HDR mode, which is what the compositor renders. Applying a PQ mode with
+// HDR off leaves the cable declaring PQ while the compositor emits plain gamma,
+// and the display decodes one as the other — the wrong colours this coupling
+// exists to prevent.
+//
+// Not when HDR is unavailable, and that is the case worth stating separately:
+// there is nothing to move, so the wire format goes on alone, and nothing must
+// later try to put back an HDR mode that was never taken away.
+//
+// Deliberately not private, for the same reason as the ones above.
++ (BOOL)shouldChangeHDRTo:(BOOL)wanted
+                     from:(BOOL)current
+             hdrAvailable:(BOOL)hdrAvailable;
 
 // HDR capability and state, read through CoreDisplay.
 + (BOOL)supportsHDRForDisplay:(CGDirectDisplayID)display;
@@ -129,92 +244,5 @@ typedef NS_ENUM(NSInteger, EZColorModeChangeResult) {
 + (EZColorModeChangeResult)restore:(EZColorModeRestorePoint *)point;
 @end
 
-
-// How HDR fits down the cable at one link timing.
-//
-// Resolution, refresh rate and colour depth share a single bandwidth budget, so
-// HDR is not a property of a display — it is a property of a resolution *at* a
-// refresh rate. On the test display 3440 × 1440 carries HDR uncompressed up to
-// 144 Hz and needs DSC at 165 and 175. Nothing in the resolution list says so,
-// which is what this answers.
-//
-// "Full" means 10-bit RGB, which carries no chroma subsampling by definition:
-// the combination HDR is meant to be seen in, and the first thing a cable runs
-// out of room for.
-typedef NS_ENUM(NSInteger, EZHDRFit) {
-    EZHDRFitUnknown = 0,   // no answer — not the same as an answer of "no"
-    EZHDRFitNone,          // the timing carries no HDR colour mode at all
-    EZHDRFitReduced,       // HDR, but not as 10-bit RGB in any form
-    EZHDRFitCompressed,    // 10-bit RGB HDR, but only with DSC compression
-    EZHDRFitFull,          // 10-bit RGB HDR, uncompressed
-};
-
-// The HDR fit for every resolution and refresh rate a display can be put into.
-//
-// Built once and asked many times, because the resolution table runs to well
-// over a thousand rows and building it costs an IOKit service scan.
-@interface EZHDRFitMap : NSObject
-// nil when the private API is unavailable or the display cannot be matched to
-// an AV interface — the same conditions under which colour mode reports nothing.
-//
-// Cached, because the scan is expensive and the answer is durable: see
-// +invalidateCaches. Ask for one at the top of each rebuild rather than keeping
-// one across rebuilds, so the cache is what decides when it is stale.
-//
-// The native size is passed in rather than worked out here, so this agrees with
-// the "Native" tag the same table shows rather than deriving a second opinion.
-// Pass 0 for an unknown native size; rows that need the fallback below then
-// report Unknown instead of guessing.
-// Named for Swift explicitly: a class method returning instancetype is imported
-// as an initializer unless told otherwise, and `EZHDRFitMap(forDisplay:)` reads
-// as though it always succeeds when the whole point is that it can return nil.
-+ (nullable instancetype)mapForDisplay:(CGDirectDisplayID)display
-                           nativeWidth:(int)nativeWidth
-                          nativeHeight:(int)nativeHeight
-    NS_SWIFT_NAME(map(forDisplay:nativeWidth:nativeHeight:));
-
-// The fit for one desktop mode, which must be given in *pixels* — a HiDPI mode
-// is negotiated on the cable at its backing size, not its point size.
-- (EZHDRFit)fitForPixelWidth:(int)width height:(int)height refreshRate:(int)refreshRate;
-
-// "HDR", "HDR (DSC)", "HDR (reduced)", or an em dash for Unknown — which says
-// there is no answer, as distinct from the nil that says the answer is no. For
-// the Preferences table, whose column header supplies the noun.
-+ (nullable NSString *)badgeForFit:(EZHDRFit)fit;
-// The same answers worded for the status menu, which has no column header and
-// does have an HDR item that toggles HDR for real: "HDR capable", so a row
-// cannot be read as a second switch, and "HDR unknown" rather than a bare dash,
-// which without a header says nothing at all. Beside +badgeForFit: rather than
-// in the menu code, so the two wordings cannot come to disagree about which fit
-// means what.
-+ (nullable NSString *)menuBadgeForFit:(EZHDRFit)fit;
-// A sentence for a tooltip, or nil on the same terms.
-+ (nullable NSString *)explanationForFit:(EZHDRFit)fit;
-
-// Drops every cached map.
-//
-// A map describes the timings a display *advertises*, not the one it is running,
-// so it outlives any number of resolution and refresh-rate changes — which is
-// what makes caching worth doing. What can change it is the display moving: a
-// different monitor, or the same one on a different cable, which may advertise
-// less. Call this when the set of attached displays changes; nothing here
-// observes that.
-//
-// Every map goes, not the one display that changed, because the key of a map
-// that has gone stale is precisely the thing that cannot be trusted — macOS
-// recycles display IDs. The cost is one rebuild per display on a hot-plug, which
-// is the event where at least one of them needed rebuilding anyway.
-//
-// The residual, named rather than defended: this depends on the change being
-// visible to CoreGraphics. Anything that renegotiates a link without the display
-// appearing to go away — a KVM or dock that holds hot-plug-detect asserted while
-// it switches source, an MST hub re-arbitrating lanes — leaves the map in place
-// and it may then overstate the tier. Unplugging a cable does not have this
-// problem; suppressing the unplug is the whole trick of that hardware. Neither
-// case has been reproduced, and none of it is distinguishable from here: the
-// only stable identity a display offers is vendor plus product, which two
-// identical monitors also share.
-+ (void)invalidateCaches;
-@end
 
 NS_ASSUME_NONNULL_END

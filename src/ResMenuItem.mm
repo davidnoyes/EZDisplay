@@ -67,9 +67,55 @@ static NSComparisonResult LargestFirst(float mine, float theirs)
 {
     NSString *size = [NSString stringWithFormat: @"%d × %d", _width, _height];
 
-    self.title = (retinaTag && self.isHiDPI)
-        ? [size stringByAppendingString: @"    Retina"]
-        : size;
+    if (retinaTag && self.isHiDPI)
+    {
+        [self setTitle: size tagged: @"Retina"];
+        return;
+    }
+
+    // An attributed title wins over a plain one, so it has to go for the plain
+    // one to show at all. Reachable through copyWithZone:, which carries the
+    // attributed title over with the rest of NSMenuItem's state.
+    self.attributedTitle = nil;
+    self.title           = size;
+}
+
+
+// Menus draw in a proportional font, so a tag padded out with spaces starts at
+// a different x on every row: "1512 × 638" is visibly narrower than
+// "2752 × 1152", and the tags step raggedly in and out. A tab stop puts them
+// all in one column instead.
+//
+// The column has to clear the widest size string a display can produce. 100pt
+// clears "5120 × 2880" comfortably at the menu font, and anything wider still
+// lines up, because the default interval matches the stop and a long size
+// simply carries its tag to the next multiple.
+- (void) setTitle: (NSString *) size tagged: (NSString *) tag
+{
+    static const CGFloat tagColumn = 100.0;
+
+    NSMutableParagraphStyle *style = [NSMutableParagraphStyle new];
+    style.tabStops = @[[[NSTextTab alloc] initWithTextAlignment: NSTextAlignmentLeft
+                                                       location: tagColumn
+                                                        options: @{}]];
+    style.defaultTabInterval = tagColumn;
+
+    NSString *spaced = [NSString stringWithFormat: @"%@ %@", size, tag];
+
+    // The plain title as well. It is not drawn — the attributed one wins — but
+    // it is what type-select matches on. Set first, so the attributed title is
+    // the one left in force.
+    self.title = spaced;
+
+    self.attributedTitle =
+        [[NSAttributedString alloc] initWithString: [NSString stringWithFormat: @"%@\t%@", size, tag]
+                                        attributes: @{ NSParagraphStyleAttributeName: style,
+                                                       NSFontAttributeName: [NSFont menuFontOfSize: 0] }];
+
+    // Measured: AppKit builds AXTitle from the attributed title and ignores the
+    // plain one, so without this a screen reader is handed the tab character
+    // that lines the tags up. Say it with a space instead.
+    self.accessibilityTitle = spaced;
 }
 
 
