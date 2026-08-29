@@ -26,12 +26,15 @@
 		C0570011A0B1C2D3E4F50011 /* CustomResolutionsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0570001A0B1C2D3E4F50001 /* CustomResolutionsStore.swift */; };
 		C0570012A0B1C2D3E4F50012 /* CustomResolutionsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0570002A0B1C2D3E4F50002 /* CustomResolutionsWindowController.swift */; };
 		C0570013A0B1C2D3E4F50013 /* SafeApply.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0570003A0B1C2D3E4F50003 /* SafeApply.swift */; };
+		C0570019A0B1C2D3E4F50019 /* ColorModeUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0570009A0B1C2D3E4F50009 /* ColorModeUI.swift */; };
 		E7E50018A0B1C2D3E4F50018 /* UtilsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7E50017A0B1C2D3E4F50017 /* UtilsTests.swift */; };
 		E7E50019A0B1C2D3E4F50019 /* Utils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FC72A1B24F664BA004E10E1 /* Utils.swift */; };
 		E7E5001AA0B1C2D3E4F5001A /* RestoreSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F48E61624FC761C0073123B /* RestoreSettings.swift */; };
 		E7E5001BA0B1C2D3E4F5001B /* CustomResolutionsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0570001A0B1C2D3E4F50001 /* CustomResolutionsStore.swift */; };
 		E7E5001CA0B1C2D3E4F5001C /* Resolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FC72A1924F664BA004E10E1 /* Resolution.swift */; };
 		E7E5001DA0B1C2D3E4F5001D /* RestoreSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7E5001EA0B1C2D3E4F5001E /* RestoreSettingsTests.swift */; };
+		E7E50021A0B1C2D3E4F50021 /* ColorModeTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = E7E50020A0B1C2D3E4F50020 /* ColorModeTests.mm */; };
+		E7E50022A0B1C2D3E4F50022 /* ColorMode.mm in Sources */ = {isa = PBXBuildFile; fileRef = D19A0031A0B1C2D3E4F50031 /* ColorMode.mm */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -64,9 +67,11 @@
 		C0570001A0B1C2D3E4F50001 /* CustomResolutionsStore.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CustomResolutionsStore.swift; sourceTree = "<group>"; };
 		C0570002A0B1C2D3E4F50002 /* CustomResolutionsWindowController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CustomResolutionsWindowController.swift; sourceTree = "<group>"; };
 		C0570003A0B1C2D3E4F50003 /* SafeApply.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SafeApply.swift; sourceTree = "<group>"; };
+		C0570009A0B1C2D3E4F50009 /* ColorModeUI.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ColorModeUI.swift; sourceTree = "<group>"; };
 		E7E50011A0B1C2D3E4F50011 /* EZDisplayTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EZDisplayTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E7E50017A0B1C2D3E4F50017 /* UtilsTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = UtilsTests.swift; sourceTree = "<group>"; };
 		E7E5001EA0B1C2D3E4F5001E /* RestoreSettingsTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = RestoreSettingsTests.swift; sourceTree = "<group>"; };
+		E7E50020A0B1C2D3E4F50020 /* ColorModeTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = ColorModeTests.mm; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -137,6 +142,7 @@
 				C0570001A0B1C2D3E4F50001 /* CustomResolutionsStore.swift */,
 				C0570002A0B1C2D3E4F50002 /* CustomResolutionsWindowController.swift */,
 				C0570003A0B1C2D3E4F50003 /* SafeApply.swift */,
+				C0570009A0B1C2D3E4F50009 /* ColorModeUI.swift */,
 				35CC4996212C54AF00704BD7 /* bridging.h */,
 			);
 			path = src;
@@ -147,6 +153,7 @@
 			children = (
 				E7E50017A0B1C2D3E4F50017 /* UtilsTests.swift */,
 				E7E5001EA0B1C2D3E4F5001E /* RestoreSettingsTests.swift */,
+				E7E50020A0B1C2D3E4F50020 /* ColorModeTests.mm */,
 			);
 			path = tests;
 			sourceTree = "<group>";
@@ -273,6 +280,7 @@
 				C0570011A0B1C2D3E4F50011 /* CustomResolutionsStore.swift in Sources */,
 				C0570012A0B1C2D3E4F50012 /* CustomResolutionsWindowController.swift in Sources */,
 				C0570013A0B1C2D3E4F50013 /* SafeApply.swift in Sources */,
+				C0570019A0B1C2D3E4F50019 /* ColorModeUI.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -286,6 +294,8 @@
 				E7E5001BA0B1C2D3E4F5001B /* CustomResolutionsStore.swift in Sources */,
 				E7E5001CA0B1C2D3E4F5001C /* Resolution.swift in Sources */,
 				E7E5001DA0B1C2D3E4F5001D /* RestoreSettingsTests.swift in Sources */,
+				E7E50021A0B1C2D3E4F50021 /* ColorModeTests.mm in Sources */,
+				E7E50022A0B1C2D3E4F50022 /* ColorMode.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

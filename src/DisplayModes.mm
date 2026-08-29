@@ -134,10 +134,10 @@ static NSString *DisplayName(CGDirectDisplayID display, int index)
     // scan of a few milliseconds — is paid on that path alone. It gives the same
     // string AppKit does, so mirroring no longer renames the monitor.
     //
-    // Deliberately not cached, unlike the HDR fit map next door, which is: that
-    // one costs 370ms and this costs about seven. A cache here would buy back a
-    // few milliseconds per rebuild while a display is mirrored, and would owe the
-    // same invalidation care as the expensive one — not a trade worth making.
+    // Deliberately not cached. It costs about seven milliseconds, so a cache
+    // would buy back very little per rebuild while a display is mirrored, and
+    // would owe invalidation care on every topology change — not a trade worth
+    // making.
     NSString *name = [EZColorModes productNameForDisplay: display];
     if (name.length > 0)
         return name;

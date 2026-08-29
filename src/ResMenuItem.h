@@ -39,6 +39,11 @@
 /// "Retina" tag, which the curated list uses to mark its HiDPI rows.
 - (void) applyResolutionTitle: (BOOL) retinaTag;
 
+/// Titles the item "3440 × 1440" with `tag` — "Native" or "Retina" — set in a
+/// fixed column beside it, so the tags line up down the menu instead of
+/// tracking the width of the digits before them.
+- (void) setTitle: (NSString *) size tagged: (NSString *) tag;
+
 /// Titles the item as a refresh rate, "60 Hz".
 - (void) applyRefreshRateTitle;
 
