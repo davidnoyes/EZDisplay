@@ -32,7 +32,8 @@ static const uint32_t kMaxDisplays = 0x10;
 - (void) displaysReconfigured;
 - (void) prefsChanged;
 - (void) toggleHDR: (NSMenuItem*) sender;
-- (void) toggleNightShift: (NSMenuItem*) sender;
+- (void) setNightShiftState: (NSMenuItem*) sender;
+- (NSMenu*) nightShiftMenu;
 - (void) toggleTrueTone: (NSMenuItem*) sender;
 - (NSMenuItem*) trueToneItem;
 - (void) setColorMode: (ColorModeMenuItem*) sender;
@@ -455,10 +456,13 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 
     if ([EZNightShift supported])
     {
+        // A submenu rather than three rows here: the top level is a list of
+        // separate things, and three rows that are one exclusive choice read as
+        // three separate settings sitting next to each other.
         NSMenuItem* nightShift = [[NSMenuItem alloc] initWithTitle: @"Night Shift"
-                                                            action: @selector(toggleNightShift:)
+                                                            action: nil
                                                      keyEquivalent: @""];
-        nightShift.state = [EZNightShift enabled] ? NSControlStateValueOn : NSControlStateValueOff;
+        nightShift.submenu = [self nightShiftMenu];
         [statusMenu addItem: nightShift];
     }
 
@@ -520,13 +524,45 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 }
 
 
-// Both toggles below answer the two menu problems toggleMirroring: describes,
-// the same way: the wanted value comes from what the item showed, and a click
-// that asks for the state already in force means the item was stale, so the
-// menu is rebuilt and nothing is changed.
+/// The three states Night Shift can be in, as one exclusive choice.
+///
+/// The schedule is named on the item rather than left to Preferences to explain,
+/// because **Scheduled** on its own does not say what it would do, and the
+/// answer is a setting in another window.
+- (NSMenu *) nightShiftMenu
+{
+    NSMenu *menu = [[NSMenu alloc] init];
+    // The schedule Scheduled would run, which is the one in force where there
+    // is one and the remembered choice where there is not.
+    NSString *schedule =
+        [EZNightShift descriptionOfScheduleMode: [EZPrefs resolvedNightShiftSchedule]];
+    NSArray<NSString *> *titles = @[@"Off",
+                                    @"On until tomorrow",
+                                    [NSString stringWithFormat: @"Scheduled: %@", schedule]];
+
+    const EZNightShiftState state = [EZNightShift state];
+    for (NSInteger i = 0; i < (NSInteger) titles.count; i++) {
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle: titles[i]
+                                                      action: @selector(setNightShiftState:)
+                                               keyEquivalent: @""];
+        item.tag = i;
+        item.state = i == state ? NSControlStateValueOn : NSControlStateValueOff;
+        [menu addItem: item];
+    }
+
+    return menu;
+}
+
+
+// The three below answer the two menu problems toggleMirroring: describes. The
+// toggles do it the same way: the wanted value comes from what the item showed,
+// and a click that asks for the state already in force means the item was
+// stale, so the menu is rebuilt and nothing is changed. Night Shift does not
+// need the first half — its items name a state outright rather than flipping
+// one — and lands on the same second half.
 //
-// Neither keeps a record of the value last asked for, which HDR needs and these
-// do not: measured against the real daemon, both settings read back their new
+// None keeps a record of the value last asked for, which HDR needs and these do
+// not: measured against the real daemon, both settings read back their new
 // value on the very next call, so there is no settling window for a second
 // click to fall into.
 //
@@ -534,12 +570,15 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 // change down, and the rebuild that follows shows the state that really is in
 // force — an item whose tick does not move says the same thing an alert would,
 // without a modal panel for something the user can simply try again.
-- (void) toggleNightShift: (NSMenuItem *)sender
+- (void) setNightShiftState: (NSMenuItem *)sender
 {
-    BOOL wanted = (sender.state != NSControlStateValueOn);
+    // The tag names the state to move to rather than a change to make, so
+    // nothing here has to reason about which way a tick was pointing. That also
+    // makes picking the item already ticked a no-op instead of a toggle back.
+    EZNightShiftState wanted = (EZNightShiftState) sender.tag;
 
-    if (wanted != [EZNightShift enabled])
-        [EZNightShift setEnabled: wanted];
+    if (wanted != [EZNightShift state])
+        [EZNightShift setState: wanted scheduleMode: [EZPrefs resolvedNightShiftSchedule]];
 
     [self refreshStatusMenu];
 }

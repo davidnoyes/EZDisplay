@@ -24,8 +24,12 @@
 typedef struct { int hour; int minute; } EZBlueLightTime;
 typedef struct { EZBlueLightTime from; EZBlueLightTime to; } EZBlueLightSchedule;
 typedef struct {
-    BOOL                active;   // the tint is being applied right now
-    BOOL                enabled;  // the setting is switched on
+    // Named from measurement, not from a header nobody has. This first flag was
+    // 1 in every state tried — schedule off, schedule on, toggle on, toggle off,
+    // mid-afternoon with no tint anywhere — so whatever it reports, it is not
+    // "the tint is on now". That is the field below. Nothing here reads this one.
+    BOOL                unidentified;
+    BOOL                enabled;  // the tint is on, by the toggle or by a schedule
     BOOL                sunSchedulePermitted;
     int                 mode;
     EZBlueLightSchedule schedule;
@@ -37,6 +41,8 @@ typedef struct {
 - (BOOL) supported;
 - (BOOL) getBlueLightStatus: (EZBlueLightStatus *) status;
 - (BOOL) setEnabled: (BOOL) enabled;
+- (BOOL) setMode: (int) mode;
+- (BOOL) setSchedule: (const EZBlueLightSchedule *) schedule;
 - (BOOL) getStrength: (float *) strength;
 - (BOOL) setStrength: (float) strength commit: (BOOL) commit;
 - (void) setStatusNotificationBlock: (void (^)(void)) block;
@@ -97,10 +103,18 @@ static id<EZBlueLightClient> BlueLightClient(void)
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         OpenCoreBrightness();
+        // The two schedule writers are required rather than checked where they
+        // are used, unlike the notification below. The menu reads the mode to
+        // decide which of its three states is ticked, so a client that can
+        // report a schedule but not set one would draw a choice that does
+        // nothing when picked. Reporting Night Shift unsupported is the honest
+        // outcome, and it is the one the read side already takes.
         const SEL required[] = {
             @selector(supported),
             @selector(getBlueLightStatus:),
             @selector(setEnabled:),
+            @selector(setMode:),
+            @selector(setSchedule:),
             @selector(getStrength:),
             @selector(setStrength:commit:),
         };
@@ -166,6 +180,109 @@ static BOOL ReadBlueLightStatus(EZBlueLightStatus *status)
 {
     id<EZBlueLightClient> client = BlueLightClient();
     return client != nil && [client setEnabled: enabled];
+}
+
+
++ (EZNightShiftMode) mode
+{
+    EZBlueLightStatus status;
+    if (!ReadBlueLightStatus(&status))
+        return EZNightShiftModeOff;
+
+    // Anything outside the three known values is treated as off rather than
+    // passed on: the enum is measured, not documented, and a caller switching
+    // on a fourth number would fall through to whichever branch came last.
+    switch (status.mode) {
+        case EZNightShiftModeSunset: return EZNightShiftModeSunset;
+        case EZNightShiftModeCustom: return EZNightShiftModeCustom;
+        default:                     return EZNightShiftModeOff;
+    }
+}
+
+
++ (BOOL) setMode: (EZNightShiftMode) mode
+{
+    id<EZBlueLightClient> client = BlueLightClient();
+    return client != nil && [client setMode: (int) mode];
+}
+
+
++ (BOOL) getScheduleFrom: (NSInteger *) fromMinute to: (NSInteger *) toMinute
+{
+    EZBlueLightStatus status;
+    if (!ReadBlueLightStatus(&status))
+        return NO;
+
+    *fromMinute = status.schedule.from.hour * 60 + status.schedule.from.minute;
+    *toMinute   = status.schedule.to.hour   * 60 + status.schedule.to.minute;
+    return YES;
+}
+
+
++ (BOOL) setScheduleFrom: (NSInteger) fromMinute to: (NSInteger) toMinute
+{
+    id<EZBlueLightClient> client = BlueLightClient();
+    if (client == nil)
+        return NO;
+
+    EZBlueLightSchedule schedule;
+    schedule.from.hour   = (int) (fromMinute / 60);
+    schedule.from.minute = (int) (fromMinute % 60);
+    schedule.to.hour     = (int) (toMinute / 60);
+    schedule.to.minute   = (int) (toMinute % 60);
+    return [client setSchedule: &schedule];
+}
+
+
++ (BOOL) sunSchedulePermitted
+{
+    EZBlueLightStatus status;
+    return ReadBlueLightStatus(&status) && status.sunSchedulePermitted;
+}
+
+
++ (NSString *) descriptionOfScheduleMode: (EZNightShiftMode) scheduleMode
+{
+    if (scheduleMode == EZNightShiftModeSunset)
+        return @"sunset to sunrise";
+
+    NSInteger from = 0, to = 0;
+    if (![self getScheduleFrom: &from to: &to])
+        return @"a custom window";
+
+    return [NSString stringWithFormat: @"%02ld:%02ld to %02ld:%02ld",
+                                       (long) (from / 60), (long) (from % 60),
+                                       (long) (to / 60),   (long) (to % 60)];
+}
+
+
++ (EZNightShiftState) state
+{
+    if ([self mode] != EZNightShiftModeOff)
+        return EZNightShiftScheduled;
+
+    return [self enabled] ? EZNightShiftUntilTomorrow : EZNightShiftOff;
+}
+
+
++ (BOOL) setState: (EZNightShiftState) state scheduleMode: (EZNightShiftMode) scheduleMode
+{
+    // Both dials are written from a known starting point rather than from
+    // wherever they happened to be, because each reads through the other.
+    // `setEnabled:` with a schedule running does not clear an override, it adds
+    // one — measured: `enabled` is YES whenever the window covers this minute,
+    // so turning it off inside the window is an override in the other
+    // direction. Dropping the mode first makes `enabled` mean only what the
+    // checkbox says, which is the one state both writes agree about.
+    if (![self setMode: EZNightShiftModeOff])
+        return NO;
+    if (![self setEnabled: state == EZNightShiftUntilTomorrow])
+        return NO;
+
+    if (state != EZNightShiftScheduled)
+        return YES;
+
+    return [self setMode: scheduleMode];
 }
 
 

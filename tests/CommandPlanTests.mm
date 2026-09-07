@@ -453,6 +453,88 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
     XCTAssertNotEqual(error.find("--json"), std::string::npos);
 }
 
+- (void)testNightShiftHandsTheTintBackToItsSchedule
+{
+    // The third of the three states the menu offers, and the only way back to a
+    // schedule once `off` or `on` has taken it away.
+    EZCommandRequest request = ParsedOK({"nightshift", "scheduled"});
+    XCTAssertEqual(request.kind, EZCommandNightShift);
+    XCTAssertEqual(request.toggleAction, EZToggleActionScheduled);
+}
+
+- (void)testNightShiftTakesSunsetToSunriseAsASchedule
+{
+    EZCommandRequest request = ParsedOK({"nightshift", "schedule", "sunset"});
+    XCTAssertEqual(request.toggleAction, EZToggleActionSchedule);
+    XCTAssertEqual(request.scheduleKind, EZScheduleSunset);
+}
+
+- (void)testNightShiftTakesAWindowAsASchedule
+{
+    EZCommandRequest request = ParsedOK({"nightshift", "schedule", "22:00-07:00"});
+    XCTAssertEqual(request.toggleAction, EZToggleActionSchedule);
+    XCTAssertEqual(request.scheduleKind, EZScheduleCustom);
+    XCTAssertEqual(request.scheduleFrom, 22 * 60);
+    XCTAssertEqual(request.scheduleTo, 7 * 60);
+}
+
+- (void)testASchedulesWordIsEitherSunsetOrAWindow
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"nightshift", "schedule"}, &error));
+    XCTAssertTrue(ParseFails({"nightshift", "schedule", "dusk"}, &error));
+    // The message has to name both forms, because a reader who guessed one of
+    // them wrong cannot tell from "dusk" alone which of the two they wanted.
+    XCTAssertNotEqual(error.find("sunset"), std::string::npos);
+    XCTAssertNotEqual(error.find("HH:MM"), std::string::npos);
+
+    // Two schedules and one too many words are the same mistake to the parser,
+    // and both have to be refused for the count rather than for the last word
+    // happening not to be a schedule.
+    XCTAssertTrue(ParseFails({"nightshift", "schedule", "22:00-07:00", "extra"}, &error));
+    XCTAssertNotEqual(error.find("one schedule"), std::string::npos);
+    XCTAssertTrue(ParseFails({"nightshift", "schedule", "sunset", "22:00-07:00"}, &error));
+    XCTAssertNotEqual(error.find("one schedule"), std::string::npos);
+}
+
+- (void)testABadWindowIsQuotedBackTheWayABadWarmthIs
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"nightshift", "schedule", "22:00-25:00"}, &error));
+    XCTAssertNotEqual(error.find("22:00-25:00"), std::string::npos);
+}
+
+- (void)testTheScheduleFormsBelongToNightShiftAlone
+{
+    // True Tone has no schedule of any kind, so both words have to be refused
+    // rather than parsed and quietly ignored by the executor.
+    std::string error;
+    XCTAssertTrue(ParseFails({"truetone", "scheduled"}, &error));
+    XCTAssertNotEqual(error.find("scheduled"), std::string::npos);
+    XCTAssertTrue(ParseFails({"truetone", "schedule", "sunset"}, &error));
+    XCTAssertNotEqual(error.find("schedule"), std::string::npos);
+}
+
+- (void)testTheScheduleFormsChangeSomethingSoTheyRefuseJSON
+{
+    // Same gate the on|off and warmth forms go through: there is no listing to
+    // render, so accepting the flag would promise output that never comes.
+    std::string error;
+    XCTAssertTrue(ParseFails({"nightshift", "scheduled", "--json"}, &error));
+    XCTAssertNotEqual(error.find("--json"), std::string::npos);
+    XCTAssertTrue(ParseFails({"nightshift", "schedule", "sunset", "--json"}, &error));
+    XCTAssertNotEqual(error.find("--json"), std::string::npos);
+}
+
+- (void)testTheScheduleFormsAreAboutEveryDisplayAtOnce
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"nightshift", "scheduled", "--display", "1"}, &error));
+    XCTAssertNotEqual(error.find("--display"), std::string::npos);
+    XCTAssertTrue(ParseFails({"nightshift", "schedule", "sunset", "--force"}, &error));
+    XCTAssertNotEqual(error.find("--force"), std::string::npos);
+}
+
 - (void)testNightShiftsHelpNamesTheSubcommandNobodyWouldGuess
 {
     // `on` and `off` are the shape every other toggle has, so a reader can find
@@ -461,6 +543,15 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
     std::string usage = EZUsageText("nightshift");
     XCTAssertNotEqual(usage.find("warmth"), std::string::npos);
     XCTAssertNotEqual(usage.find("0-100"), std::string::npos);
+    XCTAssertNotEqual(usage.find("scheduled"), std::string::npos);
+    XCTAssertNotEqual(usage.find("HH:MM-HH:MM"), std::string::npos);
+
+    // The general listing has to name them too. A reader who never asks for
+    // this topic would otherwise not learn that a schedule can be set at all,
+    // which is how `schedule` came to be missing from that line once already.
+    std::string general = EZUsageText("");
+    XCTAssertNotEqual(general.find("scheduled"), std::string::npos);
+    XCTAssertNotEqual(general.find("schedule\n"), std::string::npos);
 }
 
 @end
@@ -566,6 +657,113 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
 
     XCTAssertEqual(EZPercentFromWarmth(-0.4f), 0);
     XCTAssertEqual(EZPercentFromWarmth(1.4f), 100);
+}
+
+@end
+
+
+#pragma mark - Night Shift schedule
+
+@interface ScheduleParsingTests : XCTestCase
+@end
+
+@implementation ScheduleParsingTests
+
+- (void)testAClockTimeBecomesMinutesPastMidnight
+{
+    XCTAssertEqual(EZParseTimeOfDay("00:00"), 0);
+    XCTAssertEqual(EZParseTimeOfDay("07:00"), 7 * 60);
+    XCTAssertEqual(EZParseTimeOfDay("22:30"), 22 * 60 + 30);
+    XCTAssertEqual(EZParseTimeOfDay("23:59"), 23 * 60 + 59);
+}
+
+- (void)testAOneDigitHourIsHowAPersonWritesIt
+{
+    // `9:00` is nine o'clock everywhere outside a timetable, so refusing it
+    // would be pedantry rather than safety.
+    XCTAssertEqual(EZParseTimeOfDay("9:00"), 9 * 60);
+    XCTAssertEqual(EZParseTimeOfDay("0:05"), 5);
+}
+
+- (void)testAOneDigitMinuteIsRefusedBecauseItHasTwoReadings
+{
+    // `9:5` is as likely a slip for `9:50` as for `9:05`, and picking either
+    // sets a schedule an hour out from the one that was meant.
+    XCTAssertEqual(EZParseTimeOfDay("9:5"), -1);
+    XCTAssertEqual(EZParseTimeOfDay("22:3"), -1);
+}
+
+- (void)testATimeOffTheClockIsRefused
+{
+    XCTAssertEqual(EZParseTimeOfDay("24:00"), -1);
+    XCTAssertEqual(EZParseTimeOfDay("22:60"), -1);
+    XCTAssertEqual(EZParseTimeOfDay("-1:00"), -1);
+    XCTAssertEqual(EZParseTimeOfDay("999:00"), -1);
+}
+
+- (void)testAnythingThatIsNotAClockTimeIsRefused
+{
+    XCTAssertEqual(EZParseTimeOfDay(""), -1);
+    XCTAssertEqual(EZParseTimeOfDay("22"), -1);
+    XCTAssertEqual(EZParseTimeOfDay("22:"), -1);
+    XCTAssertEqual(EZParseTimeOfDay(":30"), -1);
+    XCTAssertEqual(EZParseTimeOfDay("22:00:00"), -1);
+    XCTAssertEqual(EZParseTimeOfDay("ten:00"), -1);
+    XCTAssertEqual(EZParseTimeOfDay("22:0o"), -1);
+    // A sign the number parser might take but a clock never writes.
+    XCTAssertEqual(EZParseTimeOfDay("+9:00"), -1);
+    XCTAssertEqual(EZParseTimeOfDay("22:+0"), -1);
+}
+
+- (void)testAWindowSplitsIntoItsTwoEnds
+{
+    int from = -1, to = -1;
+    XCTAssertTrue(EZParseScheduleWindow("22:00-07:00", &from, &to));
+    XCTAssertEqual(from, 22 * 60);
+    XCTAssertEqual(to, 7 * 60);
+}
+
+- (void)testAWindowRunningPastMidnightIsTheOrdinaryCase
+{
+    // The schedule macOS ships with runs backwards by the clock, so a check
+    // that from is before to would refuse the common one.
+    int from = 0, to = 0;
+    XCTAssertTrue(EZParseScheduleWindow("22:00-07:00", &from, &to));
+    XCTAssertGreaterThan(from, to);
+
+    // And one that does not wrap is equally fine.
+    XCTAssertTrue(EZParseScheduleWindow("09:00-17:30", &from, &to));
+    XCTAssertLessThan(from, to);
+}
+
+- (void)testAWindowWithNoLengthIsRefused
+{
+    // Both ends on the same minute describes no span at all, and macOS is not
+    // documented to say which way it reads one.
+    int from = 0, to = 0;
+    XCTAssertFalse(EZParseScheduleWindow("22:00-22:00", &from, &to));
+}
+
+- (void)testAWindowMissingAPartIsRefused
+{
+    int from = 0, to = 0;
+    XCTAssertFalse(EZParseScheduleWindow("", &from, &to));
+    XCTAssertFalse(EZParseScheduleWindow("22:00", &from, &to));
+    XCTAssertFalse(EZParseScheduleWindow("22:00-", &from, &to));
+    XCTAssertFalse(EZParseScheduleWindow("-07:00", &from, &to));
+    XCTAssertFalse(EZParseScheduleWindow("22:00-07:00-09:00", &from, &to));
+    XCTAssertFalse(EZParseScheduleWindow("22:00 - 07:00", &from, &to));
+    XCTAssertFalse(EZParseScheduleWindow("22:00-25:00", &from, &to));
+}
+
+- (void)testARefusedWindowLeavesTheOutputsAlone
+{
+    // The caller reports an error rather than reading these back, but a
+    // half-written pair is the kind of thing a later caller trips over.
+    int from = 111, to = 222;
+    XCTAssertFalse(EZParseScheduleWindow("22:00-nonsense", &from, &to));
+    XCTAssertEqual(from, 111);
+    XCTAssertEqual(to, 222);
 }
 
 @end
