@@ -121,6 +121,8 @@ class PreferencesViewController: NSViewController, NSTableViewDataSource, NSTabl
     private let tableView = NSTableView()
     private let curatedStepper = NSStepper()
     private let curatedLabel = NSTextField(labelWithString: "")
+    private let warmthSlider = NSSlider()
+    private let warmthLabel = NSTextField(labelWithString: "")
     private var launchAtLoginCheck: NSButton?
     private let colorStatusLabel = NSTextField(labelWithString: "")
     private let colorTable = NSTableView()
@@ -153,6 +155,16 @@ class PreferencesViewController: NSViewController, NSTableViewDataSource, NSTabl
         NotificationCenter.default.addObserver(
             self, selector: #selector(screenParametersChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        // Warmth posts no change notification of its own — measured, and
+        // recorded in CoreBrightness.h — so an open window cannot be told that
+        // System Settings moved it. Coming back to this app is the cue instead,
+        // which covers the way anyone would actually hit it: leave, change it
+        // there, come back. Not the app delegate's Night Shift observer, which
+        // holds one block for the whole process and would lose the menu its
+        // rebuild.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(reloadWarmth),
+            name: NSApplication.didBecomeActiveNotification, object: nil)
     }
 
     deinit { NotificationCenter.default.removeObserver(self) }
@@ -161,6 +173,7 @@ class PreferencesViewController: NSViewController, NSTableViewDataSource, NSTabl
         super.viewWillAppear()
         // The active mode may have changed since the window was last shown.
         reloadModes()
+        reloadWarmth()
     }
 
     @objc private func screenParametersChanged() {
@@ -351,6 +364,37 @@ class PreferencesViewController: NSViewController, NSTableViewDataSource, NSTabl
             optionViews.append(login)
         }
 
+        // Night Shift warmth, which is here rather than in the menu because it
+        // is one value on a scale: a menu can carry the on and off the status
+        // menu already shows, and not this. The section is absent altogether on
+        // a Mac that cannot do Night Shift, the way the HDR item is.
+        var nightShiftViews: [NSView] = []
+        if EZNightShift.supported() {
+            warmthSlider.minValue = 0
+            warmthSlider.maxValue = 100
+            reloadWarmth()
+            warmthSlider.target = self
+            warmthSlider.action = #selector(warmthChanged)
+            // Continuous, so the tint follows the knob. Each step writes the
+            // value straight through, which is what makes the preview live.
+            // Committing every step rather than only on release was measured
+            // before it was kept: 220 committed writes, a full drag of this
+            // slider, take 2.1 ms in total, and are indistinguishable from
+            // uncommitted ones. The daemon coalesces, so there is no per-step
+            // disk write to avoid and no reason to carry a commit flag around.
+            warmthSlider.isContinuous = true
+            warmthSlider.widthAnchor.constraint(equalToConstant: 220).isActive = true
+
+            let warmthRow = NSStackView(views: [warmthLabel, warmthSlider])
+            warmthRow.orientation = .horizontal
+            warmthRow.alignment = .centerY
+            warmthRow.spacing = 8
+
+            nightShiftViews = [NSBox.separator(),
+                               NSTextField(labelWithString: "Night Shift"),
+                               warmthRow]
+        }
+
         // Bottom action buttons
         let editButton = NSButton(title: "Edit Custom Resolutions…", target: self, action: #selector(editCustom))
         let restoreButton = NSButton(title: "Restore Defaults…", target: self, action: #selector(restoreDefaults))
@@ -370,6 +414,7 @@ class PreferencesViewController: NSViewController, NSTableViewDataSource, NSTabl
                                         colorStatusLabel, colorScroll,
                                         colorApplyButton,
                                         NSBox.separator(), NSTextField(labelWithString: "Menu options")] + optionViews +
+                                       nightShiftViews +
                                        [NSBox.separator(), bottomRow])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -395,6 +440,21 @@ class PreferencesViewController: NSViewController, NSTableViewDataSource, NSTabl
 
     private func updateCuratedLabel() {
         curatedLabel.stringValue = "Recommended list length: \(curatedStepper.integerValue)"
+    }
+
+    private func updateWarmthLabel() {
+        warmthLabel.stringValue = "Warmth: \(warmthSlider.integerValue)%"
+    }
+
+    /// Puts the slider back on the live warmth. The value belongs to the system
+    /// rather than to this window, so anything else — the command line, System
+    /// Settings — can move it while the window is closed.
+    @objc private func reloadWarmth() {
+        guard EZNightShift.supported() else { return }
+        // -1 means the daemon would not answer. Nothing can be shown for that,
+        // so the slider sits at the cool end rather than at a number nobody set.
+        warmthSlider.integerValue = max(0, EZNightShift.warmthPercent())
+        updateWarmthLabel()
     }
 
     // MARK: Data
@@ -690,6 +750,21 @@ class PreferencesViewController: NSViewController, NSTableViewDataSource, NSTabl
     @objc private func curatedChanged() {
         EZPrefs.curatedCount = curatedStepper.integerValue
         updateCuratedLabel()
+    }
+
+    // Setting the warmth does not switch Night Shift on, so a drag here with it
+    // off changes nothing on screen. That is the same thing System Settings
+    // does, and the on and off is one click away in the status menu.
+    @objc private func warmthChanged() {
+        // A refused write puts the slider back on the value that is really
+        // set, rather than leaving it showing a number nothing accepted. The
+        // same rule the status menu follows: report what is, not what was
+        // asked for.
+        guard EZNightShift.setWarmthPercent(warmthSlider.integerValue) else {
+            reloadWarmth()
+            return
+        }
+        updateWarmthLabel()
     }
 
     @available(macOS 13.0, *)

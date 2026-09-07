@@ -29,6 +29,7 @@
 #import "cmdline.h"
 #import "CommandPlan.h"
 #import "ColorMode.h"
+#import "CoreBrightness.h"
 #import "DisplayModes.h"
 #import "utils.h"
 #import "EZDisplay-Swift.h"
@@ -368,6 +369,121 @@ static int SetMirroring(const EZCommandRequest &request)
     return ConfirmOrRevert(request, wanted ? "Mirroring on" : "Mirroring off", ^{
         [EZDisplays setMirroring: !wanted];
     });
+}
+
+
+// Night Shift and True Tone are settings of the machine rather than of one
+// display, so nothing below takes a display, and neither can black out the
+// screen, so neither goes through ConfirmOrRevert. Both read back the moment
+// they are written, which is why a change is reported from what was asked for
+// rather than from a second read.
+
+static int ShowNightShift(const EZCommandRequest &request)
+{
+    if (![EZNightShift supported]) {
+        fprintf(stderr, "Night Shift is not available on this Mac.\n");
+        return EZExitFailed;
+    }
+
+    const BOOL on = [EZNightShift enabled];
+    const int warmth = [EZNightShift warmthPercent];
+    if (warmth < 0) {
+        fprintf(stderr, "Cannot read the Night Shift warmth.\n");
+        return EZExitFailed;
+    }
+
+    if (request.json) {
+        EZJSONObject object;
+        object.addBool("enabled", on);
+        object.addInt("warmth", warmth);
+        fprintf(stdout, "%s\n", object.text().c_str());
+        return EZExitKept;
+    }
+
+    // The warmth is shown whether it is on or not, because it is what turning
+    // it on would give you.
+    fprintf(stdout, "Night Shift is %s, warmth %d%%.\n", on ? "on" : "off", warmth);
+    return EZExitKept;
+}
+
+
+static int SetNightShift(const EZCommandRequest &request)
+{
+    if (![EZNightShift supported]) {
+        fprintf(stderr, "Night Shift is not available on this Mac.\n");
+        return EZExitFailed;
+    }
+
+    if (request.toggleAction == EZToggleActionWarmth) {
+        if (![EZNightShift setWarmthPercent: request.warmthPercent]) {
+            fprintf(stderr, "Cannot set the Night Shift warmth.\n");
+            return EZExitFailed;
+        }
+        // Said plainly, because setting the warmth does not switch Night Shift
+        // on and a caller who expected it to would otherwise see a success
+        // message and no change on screen.
+        fprintf(stdout, "Night Shift warmth %d%%%s\n", request.warmthPercent,
+                [EZNightShift enabled] ? "." : ". Night Shift is off.");
+        return EZExitKept;
+    }
+
+    const BOOL wanted = request.on;
+    if (wanted == [EZNightShift enabled]) {
+        fprintf(stdout, "Night Shift is already %s.\n", wanted ? "on" : "off");
+        return EZExitKept;
+    }
+
+    if (![EZNightShift setEnabled: wanted]) {
+        fprintf(stderr, "Cannot turn Night Shift %s.\n", wanted ? "on" : "off");
+        return EZExitFailed;
+    }
+
+    fprintf(stdout, "Night Shift %s.\n", wanted ? "on" : "off");
+    return EZExitKept;
+}
+
+
+static int ShowTrueTone(const EZCommandRequest &request)
+{
+    if (![EZTrueTone available]) {
+        fprintf(stderr, "True Tone is not available: no attached display has the sensor for it.\n");
+        return EZExitFailed;
+    }
+
+    const BOOL on = [EZTrueTone enabled];
+
+    if (request.json) {
+        EZJSONObject object;
+        object.addBool("enabled", on);
+        fprintf(stdout, "%s\n", object.text().c_str());
+        return EZExitKept;
+    }
+
+    fprintf(stdout, "True Tone is %s.\n", on ? "on" : "off");
+    return EZExitKept;
+}
+
+
+static int SetTrueTone(const EZCommandRequest &request)
+{
+    if (![EZTrueTone available]) {
+        fprintf(stderr, "True Tone is not available: no attached display has the sensor for it.\n");
+        return EZExitFailed;
+    }
+
+    const BOOL wanted = request.on;
+    if (wanted == [EZTrueTone enabled]) {
+        fprintf(stdout, "True Tone is already %s.\n", wanted ? "on" : "off");
+        return EZExitKept;
+    }
+
+    if (![EZTrueTone setEnabled: wanted]) {
+        fprintf(stderr, "Cannot turn True Tone %s.\n", wanted ? "on" : "off");
+        return EZExitFailed;
+    }
+
+    fprintf(stdout, "True Tone %s.\n", wanted ? "on" : "off");
+    return EZExitKept;
 }
 
 
@@ -747,13 +863,19 @@ int RunCommandLine(int argc, char *const *argv)
         return EZExitKept;
     }
 
-    // The two commands that have to work with nothing plugged in, so they run
+    // The commands that have to work with nothing plugged in, so they run
     // before the display list is read: `uninstall` calls the first whatever is
-    // attached at the time, and the second is not about a display at all.
+    // attached at the time, and none of the others is about a display at all.
     if (request.kind == EZCommandRestore && request.everyDisplay)
         return RestoreEveryOverride();
     if (request.kind == EZCommandPrefs)
         return request.prefName.empty() ? ShowPreferences(request) : SetPreference(request);
+    if (request.kind == EZCommandNightShift)
+        return request.toggleAction == EZToggleActionShow
+             ? ShowNightShift(request) : SetNightShift(request);
+    if (request.kind == EZCommandTrueTone)
+        return request.toggleAction == EZToggleActionShow
+             ? ShowTrueTone(request) : SetTrueTone(request);
 
     std::vector<CGDirectDisplayID> displays = AttachedDisplays();
 
@@ -803,6 +925,8 @@ int RunCommandLine(int argc, char *const *argv)
         case EZCommandList:
         case EZCommandMirror:
         case EZCommandPrefs:
+        case EZCommandNightShift:
+        case EZCommandTrueTone:
             break;  // handled above
     }
 

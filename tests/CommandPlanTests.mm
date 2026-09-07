@@ -319,6 +319,150 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
     XCTAssertTrue(ParseFails({"help", "set", "modes"}, &error));
 }
 
+- (void)testTheTwoBrightnessTogglesReportThemselvesWhenAskedForNothing
+{
+    // Unlike `hdr` and `mirror`, which always take a word. These two report
+    // state because there is no other way to read it: neither appears in
+    // `list`, and Night Shift carries a warmth that a bare on|off cannot show.
+    XCTAssertEqual(ParsedOK({"nightshift"}).kind, EZCommandNightShift);
+    XCTAssertEqual(ParsedOK({"nightshift"}).toggleAction, EZToggleActionShow);
+    XCTAssertEqual(ParsedOK({"truetone"}).kind, EZCommandTrueTone);
+    XCTAssertEqual(ParsedOK({"truetone"}).toggleAction, EZToggleActionShow);
+}
+
+- (void)testTheTwoBrightnessTogglesTakeOnAndOff
+{
+    EZCommandRequest on = ParsedOK({"nightshift", "on"});
+    XCTAssertEqual(on.toggleAction, EZToggleActionSet);
+    XCTAssertTrue(on.on);
+
+    EZCommandRequest off = ParsedOK({"nightshift", "off"});
+    XCTAssertEqual(off.toggleAction, EZToggleActionSet);
+    XCTAssertFalse(off.on);
+
+    XCTAssertTrue(ParsedOK({"truetone", "on"}).on);
+    XCTAssertFalse(ParsedOK({"truetone", "off"}).on);
+}
+
+- (void)testNightShiftTakesAWarmthAsAWholePercentage
+{
+    EZCommandRequest request = ParsedOK({"nightshift", "warmth", "70"});
+    XCTAssertEqual(request.kind, EZCommandNightShift);
+    XCTAssertEqual(request.toggleAction, EZToggleActionWarmth);
+    XCTAssertEqual(request.warmthPercent, 70);
+
+    // Both ends of the scale are values, not mistakes.
+    XCTAssertEqual(ParsedOK({"nightshift", "warmth", "0"}).warmthPercent, 0);
+    XCTAssertEqual(ParsedOK({"nightshift", "warmth", "100"}).warmthPercent, 100);
+}
+
+- (void)testAWarmthOutsideTheScaleIsRefusedRatherThanClamped
+{
+    // Clamping here would take `warmth 700` — a plain typo for 70 — and set the
+    // display to the warmest it goes, reporting success for a number the user
+    // never asked for.
+    std::string error;
+    XCTAssertTrue(ParseFails({"nightshift", "warmth", "101"}, &error));
+    // The value is quoted back, so the message names the typo rather than
+    // leaving the user to spot which of their words was the bad one. Asserted
+    // because the parser goes out of its way to embed it, and a generic
+    // "invalid warmth" would pass a bare refusal check unnoticed.
+    XCTAssertNotEqual(error.find("101"), std::string::npos);
+
+    XCTAssertTrue(ParseFails({"nightshift", "warmth", "700"}, &error));
+    XCTAssertNotEqual(error.find("700"), std::string::npos);
+
+    XCTAssertTrue(ParseFails({"nightshift", "warmth", "-1"}, &error));
+    XCTAssertNotEqual(error.find("-1"), std::string::npos);
+
+    XCTAssertTrue(ParseFails({"nightshift", "warmth", "half"}, &error));
+    XCTAssertNotEqual(error.find("half"), std::string::npos);
+
+    // The two that are about the count of words rather than the value, so they
+    // say so instead.
+    XCTAssertTrue(ParseFails({"nightshift", "warmth"}, &error));
+    XCTAssertNotEqual(error.find("percentage"), std::string::npos);
+    XCTAssertTrue(ParseFails({"nightshift", "warmth", "50", "60"}, &error));
+    XCTAssertNotEqual(error.find("percentage"), std::string::npos);
+}
+
+- (void)testWarmthBelongsToNightShiftAlone
+{
+    // True Tone has no warmth. Accepting the word would parse to a request the
+    // executor has no case for.
+    std::string error;
+    XCTAssertTrue(ParseFails({"truetone", "warmth", "70"}, &error));
+    XCTAssertNotEqual(error.find("warmth"), std::string::npos);
+    // And it is refused as an unknown word rather than by suggesting a warmth
+    // that True Tone could never take.
+    XCTAssertEqual(error.find("or warmth and a percentage"), std::string::npos);
+}
+
+- (void)testTheTwoBrightnessTogglesRefuseAWordTheyDoNotKnow
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"nightshift", "warmer"}, &error));
+    XCTAssertNotEqual(error.find("warmer"), std::string::npos);
+
+    XCTAssertTrue(ParseFails({"truetone", "auto"}, &error));
+    XCTAssertNotEqual(error.find("auto"), std::string::npos);
+
+    // This one reaches the on|off branch and fails on the word count, so it
+    // says that rather than naming a word it did understand.
+    XCTAssertTrue(ParseFails({"nightshift", "on", "off"}, &error));
+    XCTAssertNotEqual(error.find("takes nothing else"), std::string::npos);
+}
+
+- (void)testTheTwoBrightnessTogglesAreAboutEveryDisplayAtOnce
+{
+    // CoreBrightness has no per-display entry point for either, so a selector
+    // asks for something neither command can do — the same reason `mirror`
+    // refuses one. `--force` goes too: neither toggle blanks the screen, so
+    // there is no confirm-or-revert for it to skip.
+    std::string error;
+    XCTAssertTrue(ParseFails({"nightshift", "on", "--display", "1"}, &error));
+    XCTAssertNotEqual(error.find("--display"), std::string::npos);
+    XCTAssertTrue(ParseFails({"truetone", "on", "-d", "1"}, &error));
+    XCTAssertTrue(ParseFails({"nightshift", "on", "--force"}, &error));
+    XCTAssertNotEqual(error.find("--force"), std::string::npos);
+    XCTAssertTrue(ParseFails({"truetone", "on", "-f"}, &error));
+
+    // The bare reporting form and the warmth form go through the same gate, so
+    // both are checked rather than left to the on|off case standing for them.
+    XCTAssertTrue(ParseFails({"nightshift", "--display", "1"}, &error));
+    XCTAssertTrue(ParseFails({"nightshift", "warmth", "50", "--force"}, &error));
+    XCTAssertTrue(ParseFails({"truetone", "--force"}, &error));
+}
+
+- (void)testTheTwoBrightnessTogglesTakeJSONOnlyWhenTheyReport
+{
+    // The same trap `color set` and `custom add` fell into: the flag is gated by
+    // command word, and each of these commands covers both a listing and a
+    // change. Accepting it on the change would promise output that never comes.
+    XCTAssertTrue(ParsedOK({"nightshift", "--json"}).json);
+    XCTAssertTrue(ParsedOK({"truetone", "--json"}).json);
+
+    std::string error;
+    XCTAssertTrue(ParseFails({"nightshift", "on", "--json"}, &error));
+    // Named, because the flag is accepted on the bare form of the same command
+    // and a message that did not say so would read as a contradiction.
+    XCTAssertNotEqual(error.find("--json"), std::string::npos);
+    XCTAssertTrue(ParseFails({"nightshift", "warmth", "70", "--json"}, &error));
+    XCTAssertNotEqual(error.find("--json"), std::string::npos);
+    XCTAssertTrue(ParseFails({"truetone", "off", "--json"}, &error));
+    XCTAssertNotEqual(error.find("--json"), std::string::npos);
+}
+
+- (void)testNightShiftsHelpNamesTheSubcommandNobodyWouldGuess
+{
+    // `on` and `off` are the shape every other toggle has, so a reader can find
+    // them without being told. `warmth` is only in this one command, and the
+    // scale it takes is not implied by the word.
+    std::string usage = EZUsageText("nightshift");
+    XCTAssertNotEqual(usage.find("warmth"), std::string::npos);
+    XCTAssertNotEqual(usage.find("0-100"), std::string::npos);
+}
+
 @end
 
 
@@ -333,7 +477,8 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
 {
     std::string usage = EZUsageText("");
     for (const std::string &command : {"list", "modes", "set", "hdr", "mirror",
-                                       "color", "restore", "custom", "prefs", "help"})
+                                       "color", "restore", "custom", "prefs",
+                                       "nightshift", "truetone", "help"})
         XCTAssertNotEqual(usage.find(command), std::string::npos,
                           @"the usage text does not mention %s", command.c_str());
 }
@@ -343,7 +488,8 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
     // A command with no text of its own falls back to the general listing,
     // which reads as though `help` did not understand the name.
     for (const std::string &command : {"list", "modes", "set", "hdr", "mirror",
-                                       "color", "restore", "custom", "prefs"})
+                                       "color", "restore", "custom", "prefs",
+                                       "nightshift", "truetone"})
         XCTAssertNotEqual(EZUsageText(command), EZUsageText(""),
                           @"%s has no help of its own", command.c_str());
 }
@@ -366,6 +512,60 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
 - (void)testAnUnknownTopicFallsBackToTheGeneralText
 {
     XCTAssertEqual(EZUsageText("bits"), EZUsageText(""));
+}
+
+@end
+
+
+#pragma mark - Night Shift warmth
+
+@interface WarmthScaleTests : XCTestCase
+@end
+
+@implementation WarmthScaleTests
+
+- (void)testTheScaleEndsAndItsMiddleMapBothWays
+{
+    XCTAssertEqualWithAccuracy(EZWarmthFromPercent(0),   0.0f, 0.0001);
+    XCTAssertEqualWithAccuracy(EZWarmthFromPercent(50),  0.5f, 0.0001);
+    XCTAssertEqualWithAccuracy(EZWarmthFromPercent(100), 1.0f, 0.0001);
+
+    XCTAssertEqual(EZPercentFromWarmth(0.0f), 0);
+    XCTAssertEqual(EZPercentFromWarmth(0.5f), 50);
+    XCTAssertEqual(EZPercentFromWarmth(1.0f), 100);
+}
+
+- (void)testEveryPercentageSurvivesTheRoundTrip
+{
+    // The two halves are used together — a warmth set from the command line is
+    // read back by the same command's listing — so a percentage that comes back
+    // as its neighbour would report a value nobody set. Truncating instead of
+    // rounding does exactly that: 0.07f * 100 is 6.999999 in float.
+    for (int percent = 0; percent <= 100; percent++)
+        XCTAssertEqual(EZPercentFromWarmth(EZWarmthFromPercent(percent)), percent,
+                       @"%d did not survive the round trip", percent);
+}
+
+- (void)testAWarmthFromElsewhereIsRoundedToTheNearestPercent
+{
+    // CoreBrightness holds a float, and nothing stops System Settings leaving
+    // one between two percentages. Rounding down would show 42% for a value
+    // nearer 43.
+    XCTAssertEqual(EZPercentFromWarmth(0.426f), 43);
+    XCTAssertEqual(EZPercentFromWarmth(0.424f), 42);
+}
+
+- (void)testAValueOffEitherEndOfTheScaleIsClamped
+{
+    // Neither caller can produce one today: the parser refuses a percentage
+    // outside 0 to 100, and a slider cannot leave its track. The clamp is what
+    // stops a third caller handing the private API a strength it never promised
+    // to take, which is not a call worth finding out the behavior of.
+    XCTAssertEqualWithAccuracy(EZWarmthFromPercent(-40), 0.0f, 0.0001);
+    XCTAssertEqualWithAccuracy(EZWarmthFromPercent(140), 1.0f, 0.0001);
+
+    XCTAssertEqual(EZPercentFromWarmth(-0.4f), 0);
+    XCTAssertEqual(EZPercentFromWarmth(1.4f), 100);
 }
 
 @end

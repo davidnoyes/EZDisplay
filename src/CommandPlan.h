@@ -40,6 +40,8 @@ enum EZCommandKind {
     EZCommandRestore,
     EZCommandCustom,
     EZCommandPrefs,
+    EZCommandNightShift,
+    EZCommandTrueTone,
 };
 
 /// Which display a command applies to.
@@ -66,6 +68,34 @@ enum EZCustomAction {
     EZCustomActionAdd,
     EZCustomActionRemove,
 };
+
+/// What a `nightshift` or `truetone` command was asked to do.
+///
+/// Reporting the state is an action here rather than a command of its own,
+/// because `nightshift` and `nightshift on` are the same subject asked two
+/// different things. `hdr` and `mirror` have no equivalent: they predate this
+/// and always take a word, so they are left as they are rather than grown a
+/// bare form nobody has asked for.
+enum EZToggleAction {
+    EZToggleActionShow,
+    EZToggleActionSet,
+    EZToggleActionWarmth,   // `nightshift` only
+};
+
+/// Night Shift's warmth as CoreBrightness holds it — 0 to 1 — from the whole
+/// percentage the command line and the Preferences slider both deal in.
+///
+/// A percentage outside the range is clamped rather than refused, because both
+/// callers have already refused what a user could type wrong: the parser rejects
+/// anything that is not 0 to 100, and a slider cannot leave its own track. The
+/// clamp is here so a future third caller cannot hand the private API a strength
+/// it never promised to accept.
+float EZWarmthFromPercent(int percent);
+
+/// The same value back, as the whole percentage a listing prints. Rounded to
+/// nearest, so the number shown for a warmth set from the same scale is the
+/// number that was asked for.
+int EZPercentFromWarmth(float warmth);
 
 /// How a preference's value is written on the command line, which is also how
 /// the executor has to store it.
@@ -152,6 +182,9 @@ struct EZCommandRequest {
     int           elementID   = 0;
 
     EZCustomAction customAction = EZCustomActionList;
+
+    EZToggleAction toggleAction  = EZToggleActionShow;
+    int            warmthPercent = 0;
 
     std::string prefName;        // empty: show every preference
     bool        prefFlag  = false;

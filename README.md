@@ -18,6 +18,8 @@ attached display](etc/screenshot.png)
 - Turns HDR on and off per display, and switches color mode where the display
   offers a choice.
 - Turns display mirroring on and off.
+- Turns Night Shift and True Tone on and off, and sets how warm Night Shift
+  gets, without opening **System Settings**.
 - Adds custom scaled resolutions by writing a display override file, and
   removes them again later.
 - Reverts a change automatically if you do not confirm it, so a mode that
@@ -63,6 +65,13 @@ list of recommended resolutions. Below those:
 - **Refresh Rate** switches rate without touching resolution.
 - **HDR** toggles high dynamic range.
 - **Display mirroring** toggles mirroring for the set.
+- **Night Shift** and **True Tone** toggle those two settings. They sit below
+  the per-display sections because they belong to the machine rather than to
+  one display, and each appears only where the hardware offers it, so **True
+  Tone** is absent unless a display has the sensor for it.
+
+Change either from **System Settings** and the menu follows, so the tick always
+matches the setting.
 
 After a resolution, HDR, or mirroring change, EZDisplay asks you to confirm.
 Ignore the prompt and the display goes back to what it was, which is what saves
@@ -79,6 +88,10 @@ modes; and these options:
 - **Recommended list length**, which sets how many resolutions the menu shows
   before **More Resolutions**
 - **Launch EZDisplay at login**
+- **Warmth**, a slider for how warm Night Shift makes the screen. The tint
+  follows the slider as you drag it, so you can see what you are choosing.
+  Warmth is separate from the toggle, as it is in **System Settings**: setting
+  it does not turn Night Shift on.
 
 **Edit Custom Resolutions…** adds resolutions the display does not advertise.
 Give the resolution you want, not twice it: to get a HiDPI 1920×1080, add
@@ -118,6 +131,8 @@ ezdisplay list
 | `hdr on\|off` | Turn HDR on or off for one display |
 | `mirror on\|off` | Turn mirroring on or off for the whole set of displays |
 | `color list\|set <id>` | List the display's color modes, or apply one |
+| `nightshift [on\|off\|warmth <0-100>]` | Show Night Shift, turn it on or off, or set its warmth |
+| `truetone [on\|off]` | Show True Tone, or turn it on or off |
 | `custom list\|add\|remove` | List, add, or remove a custom resolution |
 | `restore` | Remove the display overrides EZDisplay created |
 | `prefs [set <name> <value>]` | Show the app's settings, or change one |
@@ -145,7 +160,7 @@ The options the other commands take, and where each one is accepted:
 | `-f`, `--force` | Apply without asking for confirmation | `set`, `hdr`, `mirror`, `color` |
 | `--all` | Every display EZDisplay has touched — disconnected ones included | `restore` |
 | `--hidpi` | Add the resolution as a HiDPI mode | `custom add` |
-| `--json` | Print the listing as JSON instead of as a table | `list`, `modes`, `color list`, `custom list`, `prefs` |
+| `--json` | Print what the command reports as JSON instead of as text | `list`, `modes`, `color list`, `custom list`, `prefs`, `nightshift`, `truetone` |
 
 An option a command does not take is an error, not something ignored, so a
 misplaced flag tells you rather than quietly changing nothing.
@@ -204,18 +219,59 @@ A truth value can be written `on`, `off`, `true`, `false`, `yes`, `no`, `1`, or
 A running app reads the new value the next time it rebuilds its menu, which may
 not be until the display set changes or the app restarts.
 
+### Night Shift and True Tone
+
+Both settings belong to the machine rather than to a display, which is why
+neither command takes `--display`. macOS offers no way to warm one screen and
+not another, so a flag that looked like it picked one would be a lie.
+
+Called bare, each reports the state and exits `0`:
+
+```bash
+ezdisplay nightshift              # Night Shift is off, warmth 50%.
+ezdisplay truetone                # True Tone is on.
+ezdisplay nightshift on
+ezdisplay truetone off
+ezdisplay nightshift warmth 70
+```
+
+Warmth runs from `0`, the coolest, to `100`, the warmest, matching the slider
+in **System Settings**. It is separate from the toggle, so setting it while
+Night Shift is off changes how it looks the next time it comes on rather than
+turning it on now — and the command says so.
+
+A whole number outside `0` to `100` is refused rather than clamped, because
+`warmth 700` is a typo for `70`, and clamping it would set the warmest there is
+while reporting a change nobody asked for.
+
+Not every machine has both. Where a setting is missing, the command says which
+and exits `1`, so a script can tell "off" from "not here":
+
+```text
+True Tone is not available: no attached display has the sensor for it.
+```
+
 ### Machine-readable output
 
-Every command with a listing takes `--json`, which prints one array of objects
-and nothing else on stdout:
+Every command that reports something takes `--json`, which prints that one
+value and nothing else on stdout. A command that lists prints an array of
+objects:
 
 ```bash
 ezdisplay list --json | jq -r '.[] | select(.hdrCapable) | .selector'
 ```
 
-The array is always valid JSON, empty included, and the exit status is the same
-one the table would have given: `ezdisplay modes --json` with filters nothing
-matches prints `[]`, says why on stderr, and exits `1`.
+A command that reports a single state prints a single object instead, because
+wrapping one state in an array would make every caller reach past an index that
+is always `0`:
+
+```bash
+ezdisplay nightshift --json | jq -r .warmth
+```
+
+Either way the output is valid JSON, an empty list included, and the exit
+status is the same one the text would have given: `ezdisplay modes --json` with
+filters nothing matches prints `[]`, says why on stderr, and exits `1`.
 
 `--json` is refused by the commands that change something, because there would
 be no listing to render and taking the flag would promise output that never
