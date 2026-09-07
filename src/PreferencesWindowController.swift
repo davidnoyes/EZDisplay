@@ -464,6 +464,14 @@ class PreferencesViewController: NSViewController, NSTableViewDataSource, NSTabl
                 picker.datePickerElements = [.hourMinute]
                 picker.target = self
                 picker.action = #selector(scheduleWindowChanged)
+                // AppKit measures this control a few points short and clips the
+                // last digit, and `sizeToFit` gives the same short answer. The
+                // slack is added to what it measured rather than stated as a
+                // width, because that measurement is the one thing that already
+                // knows how wide the locale's time format is: a 12-hour one
+                // carries "AM" as well and would not fit a number chosen here.
+                picker.widthAnchor.constraint(
+                    equalToConstant: picker.intrinsicContentSize.width + 6).isActive = true
             }
             let windowRow = NSStackView(views: [NSTextField(labelWithString: "From:"), scheduleFrom,
                                                 NSTextField(labelWithString: "To:"), scheduleTo])
