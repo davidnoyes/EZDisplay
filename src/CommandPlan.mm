@@ -37,6 +37,8 @@ bool CommandFromWord(const std::string &word, EZCommandKind *kind)
         {"restore", EZCommandRestore},
         {"custom",  EZCommandCustom},
         {"prefs",   EZCommandPrefs},
+        {"nightshift", EZCommandNightShift},
+        {"truetone",   EZCommandTrueTone},
     };
 
     auto found = commands.find(word);
@@ -80,7 +82,8 @@ bool CommandAllowsOption(EZCommandKind kind, const std::string &name)
     if (name == "--json")
         return kind == EZCommandList  || kind == EZCommandModes
             || kind == EZCommandColor || kind == EZCommandCustom
-            || kind == EZCommandPrefs;
+            || kind == EZCommandPrefs || kind == EZCommandNightShift
+            || kind == EZCommandTrueTone;
 
     return false;
 }
@@ -529,6 +532,55 @@ bool EZParseCommandLine(int argc, const char *const *argv,
             break;
         }
 
+        case EZCommandNightShift:
+        case EZCommandTrueTone: {
+            const bool warmthIsMine = request->kind == EZCommandNightShift;
+
+            if (positionals.empty()) {
+                request->toggleAction = EZToggleActionShow;
+                break;
+            }
+
+            const std::string &action = positionals[0];
+
+            if (action == "on" || action == "off") {
+                if (positionals.size() != 1)
+                    return fail(command + " " + action + " takes nothing else");
+                // As with `color set`: the flag belongs to the bare form, which
+                // reports the state, and only the action tells the two apart.
+                if (request->json)
+                    return fail(command + " " + action + " takes no --json: it changes "
+                                "the setting rather than printing it");
+                request->toggleAction = EZToggleActionSet;
+                request->on = action == "on";
+                break;
+            }
+
+            if (warmthIsMine && action == "warmth") {
+                if (positionals.size() != 2)
+                    return fail("nightshift warmth takes one whole percentage, 0 to 100");
+                if (request->json)
+                    return fail("nightshift warmth takes no --json: it changes the "
+                                "warmth rather than printing it");
+
+                long percent = 0;
+                // Clamping would take `warmth 700`, a plain typo for 70, and set
+                // the warmest there is while reporting the success of a change
+                // nobody asked for.
+                if (!ParseWholeNumber(positionals[1], &percent) || percent > 100)
+                    return fail("\"" + positionals[1] + "\" is not a warmth: a whole "
+                                "percentage from 0 to 100");
+
+                request->toggleAction = EZToggleActionWarmth;
+                request->warmthPercent = (int) percent;
+                break;
+            }
+
+            return fail(command + " takes on or off" +
+                        (warmthIsMine ? ", or warmth and a percentage" : "") +
+                        ", not \"" + action + "\"");
+        }
+
         case EZCommandRestore: {
             if (!positionals.empty())
                 return fail("restore takes options, not \"" + positionals[0] + "\"");
@@ -551,6 +603,25 @@ bool EZParseCommandLine(int argc, const char *const *argv,
     }
 
     return true;
+}
+
+
+float EZWarmthFromPercent(int percent)
+{
+    if (percent <= 0)   return 0.0f;
+    if (percent >= 100) return 1.0f;
+    return (float) percent / 100.0f;
+}
+
+
+int EZPercentFromWarmth(float warmth)
+{
+    if (warmth <= 0.0f) return 0;
+    if (warmth >= 1.0f) return 100;
+    // Rounded rather than truncated, so a warmth set from this same scale reads
+    // back as the number that was asked for: 0.07f * 100 is 6.999999 in float,
+    // and truncating it reports 6% for a warmth of 7%.
+    return (int) lroundf(warmth * 100.0f);
 }
 
 
@@ -595,6 +666,26 @@ std::string EZUsageText(const std::string &topic)
          "\n"
          "Turns mirroring on or off for the whole set of displays, which is why this\n"
          "command takes no display selector.\n"},
+
+        {"nightshift",
+         "Usage: ezdisplay nightshift [--json]\n"
+         "       ezdisplay nightshift on|off\n"
+         "       ezdisplay nightshift warmth <0-100>\n"
+         "\n"
+         "Shows whether Night Shift is on and how warm it is set, or changes either.\n"
+         "Night Shift is one setting for the whole machine, so this command takes no\n"
+         "display selector.\n"
+         "\n"
+         "Turning it on here is the same as turning it on in System Settings: a\n"
+         "schedule you have set still runs, and still turns it off again at sunrise.\n"},
+
+        {"truetone",
+         "Usage: ezdisplay truetone [--json]\n"
+         "       ezdisplay truetone on|off\n"
+         "\n"
+         "Shows whether True Tone is on, or turns it on or off. True Tone is one\n"
+         "setting for the whole machine, so this command takes no display selector,\n"
+         "and a display that does not support it is reported rather than changed.\n"},
 
         {"color",
          "Usage: ezdisplay color list [--display <selector>] [--json]\n"
@@ -659,6 +750,8 @@ std::string EZUsageText(const std::string &topic)
         "  set        Change resolution, scale, or refresh rate\n"
         "  hdr        Turn HDR on or off\n"
         "  mirror     Turn display mirroring on or off\n"
+        "  nightshift Show, turn on or off, or set the warmth of Night Shift\n"
+        "  truetone   Show, or turn on or off, True Tone\n"
         "  color      List or apply the display's colour modes\n"
         "  restore    Remove the display overrides EZDisplay created\n"
         "  custom     List, add, or remove a custom resolution\n"

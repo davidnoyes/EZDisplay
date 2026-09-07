@@ -20,6 +20,7 @@
 #import "ResMenuItem.h"
 #import "DisplayModes.h"
 #import "ColorMode.h"
+#import "CoreBrightness.h"
 #import "EZDisplay-Swift.h"
 
 
@@ -31,6 +32,9 @@ static const uint32_t kMaxDisplays = 0x10;
 - (void) displaysReconfigured;
 - (void) prefsChanged;
 - (void) toggleHDR: (NSMenuItem*) sender;
+- (void) toggleNightShift: (NSMenuItem*) sender;
+- (void) toggleTrueTone: (NSMenuItem*) sender;
+- (NSMenuItem*) trueToneItem;
 - (void) setColorMode: (ColorModeMenuItem*) sender;
 - (void) scheduleMenuRefresh;
 - (void) settledMenuRefresh;
@@ -181,6 +185,10 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     uint32_t nDisplays;
     CGDirectDisplayID displays[kMaxDisplays];
     CGGetOnlineDisplayList(kMaxDisplays, displays, &nDisplays);
+
+    // Set by the loop below when a built-in panel took the True Tone item, so
+    // the whole-machine section does not show a second one.
+    BOOL trueToneShown = NO;
 
     for (int i = 0; i < nDisplays; i++)
     {
@@ -397,6 +405,18 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
             [statusMenu addItem: hdr];
         }
 
+        // --- True Tone, next to the panel that has the sensor ---
+        // The setting itself is one for the whole machine, so it is shown once:
+        // here when there is a built-in panel, and among the whole-machine items
+        // at the bottom when there is not. A Mac can have True Tone with no
+        // built-in display — a Studio Display has the sensor too — which is why
+        // the second placement exists at all.
+        if (CGDisplayIsBuiltin(display) && [EZTrueTone available])
+        {
+            [statusMenu addItem: [self trueToneItem]];
+            trueToneShown = YES;
+        }
+
         // --- Color Mode submenu ---
         // Beside HDR rather than only in Preferences, because it is the same
         // kind of decision about the same link, and going through a window to
@@ -418,6 +438,12 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
         [statusMenu addItem: [NSMenuItem separatorItem]];
     }
 
+    // --- Settings that belong to the Mac rather than to one display ---
+    // Grouped under one separator, which is added only if the group has
+    // anything in it: on a single-display Mac with no Night Shift there would
+    // otherwise be two separators with nothing between them.
+    NSUInteger beforeGlobals = statusMenu.numberOfItems;
+
     if (nDisplays > 1)
     {
         NSMenuItem* mirroring = [[NSMenuItem alloc] initWithTitle: @"Display mirroring"
@@ -425,8 +451,25 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
                                                     keyEquivalent: @""];
         mirroring.state = CGDisplayIsInMirrorSet(CGMainDisplayID());
         [statusMenu addItem: mirroring];
-        [statusMenu addItem: [NSMenuItem separatorItem]];
     }
+
+    if ([EZNightShift supported])
+    {
+        NSMenuItem* nightShift = [[NSMenuItem alloc] initWithTitle: @"Night Shift"
+                                                            action: @selector(toggleNightShift:)
+                                                     keyEquivalent: @""];
+        nightShift.state = [EZNightShift enabled] ? NSControlStateValueOn : NSControlStateValueOff;
+        [statusMenu addItem: nightShift];
+    }
+
+    // The warmth is not here. It is one value on a slider rather than a choice
+    // between a few, which a menu is a poor place for, so it lives in
+    // Preferences beside the other settings that take a number.
+    if (!trueToneShown && [EZTrueTone available])
+        [statusMenu addItem: [self trueToneItem]];
+
+    if (statusMenu.numberOfItems > beforeGlobals)
+        [statusMenu addItem: [NSMenuItem separatorItem]];
 
     [statusMenu addItemWithTitle: @"Preferences…" action: @selector(showPreferences) keyEquivalent: @","];
     [statusMenu addItemWithTitle: @"About EZDisplay" action: @selector(showAbout)    keyEquivalent: @""];
@@ -464,6 +507,55 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 // display reports the old value for a second or two after a toggle. Mirroring
 // has no such lag to cover: the rebuild above lands before the menu can be
 // opened again, so the next click is on a fresh item.
+// Built here rather than at both call sites, because the item is the same one
+// wherever it is shown: the setting is global, and only its place in the menu
+// depends on whether this Mac has a built-in panel.
+- (NSMenuItem *) trueToneItem
+{
+    NSMenuItem* trueTone = [[NSMenuItem alloc] initWithTitle: @"True Tone"
+                                                      action: @selector(toggleTrueTone:)
+                                               keyEquivalent: @""];
+    trueTone.state = [EZTrueTone enabled] ? NSControlStateValueOn : NSControlStateValueOff;
+    return trueTone;
+}
+
+
+// Both toggles below answer the two menu problems toggleMirroring: describes,
+// the same way: the wanted value comes from what the item showed, and a click
+// that asks for the state already in force means the item was stale, so the
+// menu is rebuilt and nothing is changed.
+//
+// Neither keeps a record of the value last asked for, which HDR needs and these
+// do not: measured against the real daemon, both settings read back their new
+// value on the very next call, so there is no settling window for a second
+// click to fall into.
+//
+// A refused write puts up nothing. It can only mean the daemon turned the
+// change down, and the rebuild that follows shows the state that really is in
+// force — an item whose tick does not move says the same thing an alert would,
+// without a modal panel for something the user can simply try again.
+- (void) toggleNightShift: (NSMenuItem *)sender
+{
+    BOOL wanted = (sender.state != NSControlStateValueOn);
+
+    if (wanted != [EZNightShift enabled])
+        [EZNightShift setEnabled: wanted];
+
+    [self refreshStatusMenu];
+}
+
+
+- (void) toggleTrueTone: (NSMenuItem *)sender
+{
+    BOOL wanted = (sender.state != NSControlStateValueOn);
+
+    if (wanted != [EZTrueTone enabled])
+        [EZTrueTone setEnabled: wanted];
+
+    [self refreshStatusMenu];
+}
+
+
 - (void) toggleMirroring: (NSMenuItem *)sender {
     BOOL wanted = (sender.state != NSControlStateValueOn);
 
@@ -632,6 +724,14 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
                                              selector: @selector(prefsChanged)
                                                  name: [EZPrefs changedNotification]
                                                object: nil];
+
+    // Both settings can be changed from System Settings, and neither is a
+    // display reconfiguration, so nothing else here would notice. Rebuilt at
+    // once rather than through scheduleMenuRefresh: an external change arrives
+    // as one event, not the burst a reconfiguration produces.
+    __weak EZAppDelegate* weakSelf = self;
+    [EZNightShift observeChanges: ^{ [weakSelf refreshStatusMenu]; }];
+    [EZTrueTone   observeChanges: ^{ [weakSelf refreshStatusMenu]; }];
 
     // Build the menu before the status item exists, so the first thing shown in
     // the bar already has one rather than briefly clicking through to nothing.
