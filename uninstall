@@ -52,13 +52,27 @@ osascript -e 'quit app "EZDisplay"' 2>/dev/null
 
 restoreNote="Your display overrides were left in place."
 if [[ $removeOverrides == yes ]]; then
-    if "${APP}/Contents/MacOS/EZDisplay" --restore-all; then
+    if "${APP}/Contents/MacOS/EZDisplay" restore --all; then
         restoreNote="The display overrides EZDisplay created were removed, as reported
 above. A reboot may be required before those displays return to their default
 resolution."
     else
         restoreNote="Your display overrides could NOT be removed; they are still in
 place. The backups below are untouched."
+    fi
+fi
+
+# The command-line symlink, if an install created one. Provenance again: an
+# ezdisplay on PATH that points somewhere else belongs to something else, and
+# this script did not put it there.
+LINK=/usr/local/bin/ezdisplay
+linkNote=""
+if [[ $(readlink "$LINK" 2>/dev/null) == */EZDisplay.app/Contents/MacOS/EZDisplay ]]; then
+    if sudo rm -f "$LINK"; then
+        linkNote="The ezdisplay command was removed from ${LINK}."
+    else
+        linkNote="The ezdisplay command at ${LINK} could not be removed; it is now a
+dead link, so remove it by hand."
     fi
 fi
 
@@ -74,7 +88,7 @@ rm -f "$PREFERENCES"
 
 cat <<EOF
 
-Uninstall finished. ${restoreNote}
+Uninstall finished. ${restoreNote} ${linkNote}
 
 Your preferences were removed. Any backup of a display's original settings is
 kept, in:

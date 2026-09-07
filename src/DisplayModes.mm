@@ -234,4 +234,35 @@ static NSString *DisplayName(CGDirectDisplayID display, int index)
     return ApplyDisplayModeNumber(display, modeNum);
 }
 
++ (CGError)setMirroring:(BOOL)on
+{
+    CGDisplayCount count = 0;
+    CGDirectDisplayID displays[0x10];
+    CGGetOnlineDisplayList((uint32_t) (sizeof(displays) / sizeof(displays[0])), displays, &count);
+
+    // CoreGraphics states mirroring one display at a time, as "this display
+    // follows that one". kCGNullDirectDisplay is how it spells "follows
+    // nothing", so the same loop both builds the mirror set and dismantles it.
+    CGDirectDisplayID target = on ? CGMainDisplayID() : kCGNullDirectDisplay;
+
+    CGDisplayConfigRef configRef;
+    CGError error = CGBeginDisplayConfiguration(&configRef);
+    if (error != kCGErrorSuccess) return error;
+
+    for (CGDisplayCount i = 0; i < count; i++) {
+        // Nothing can be asked to follow itself. When unmirroring the target
+        // is the null display, which no real display ever matches, so every
+        // one of them is released.
+        if (displays[i] == target) continue;
+
+        error = CGConfigureDisplayMirrorOfDisplay(configRef, displays[i], target);
+        if (error != kCGErrorSuccess) {
+            CGCancelDisplayConfiguration(configRef);
+            return error;
+        }
+    }
+
+    return CGCompleteDisplayConfiguration(configRef, kCGConfigurePermanently);
+}
+
 @end

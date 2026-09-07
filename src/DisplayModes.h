@@ -47,6 +47,11 @@ NS_ASSUME_NONNULL_BEGIN
 // confirm-or-revert flow to capture and restore a mode.
 + (int)currentModeNumForDisplay:(CGDirectDisplayID)display;
 + (BOOL)setModeNum:(int)modeNum forDisplay:(CGDirectDisplayID)display;
+// Mirror every display to the main one, or release them all. Returns the
+// CGError rather than a BOOL, because both callers name the failure they
+// report. Reversible by calling it again with the old value, which is what
+// makes it safe behind confirm-or-revert.
++ (CGError)setMirroring:(BOOL)on;
 @end
 
 NS_ASSUME_NONNULL_END

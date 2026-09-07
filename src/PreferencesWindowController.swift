@@ -49,6 +49,46 @@ import ServiceManagement
     @objc static func resolvedShowRefreshMenu() -> Bool { showRefreshMenu }
     @objc static func resolvedCuratedCount() -> Int { curatedCount }
 
+    // The same values the other way, for the command line's `prefs` subcommand.
+    @objc static func setResolvedShowStandard(_ value: Bool) { showStandard = value }
+    @objc static func setResolvedShowRefreshMenu(_ value: Bool) { showRefreshMenu = value }
+    @objc static func setResolvedCuratedCount(_ value: Int) { curatedCount = value }
+
+    /// Whether the app is registered to start at login.
+    ///
+    /// The system is asked rather than the mirrored default, because the two can
+    /// disagree: a login item removed in System Settings leaves the default
+    /// saying it is still on, and reporting that would be reporting a wish.
+    @objc static func resolvedLaunchAtLogin() -> Bool {
+        guard #available(macOS 13.0, *) else {
+            return UserDefaults.standard.bool(forKey: launchAtLoginKey)
+        }
+
+        return SMAppService.mainApp.status == .enabled
+    }
+
+    /// Registers or unregisters the login item, returning nil on success or the
+    /// reason it failed. The default is only a mirror, so it is written after the
+    /// system has agreed rather than before.
+    @objc static func setLaunchAtLogin(_ value: Bool) -> String? {
+        guard #available(macOS 13.0, *) else {
+            return "This version of macOS has no login-item service EZDisplay can use."
+        }
+
+        do {
+            if value {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            return error.localizedDescription
+        }
+
+        UserDefaults.standard.set(value, forKey: launchAtLoginKey)
+        return nil
+    }
+
     private static func notifyChanged() {
         NotificationCenter.default.post(name: changedNotification, object: nil)
     }

@@ -57,5 +57,30 @@ if [[ ! -d ${DESTINATION}/EZDisplay.app ]]; then
     exit 100
 fi
 
+# The command line is the same binary, inside the bundle, where nothing on PATH
+# can reach it. A symlink is the whole of the fix: macOS resolves the app bundle
+# from the executable it actually ran rather than from the name it was called
+# by, so the tool behaves identically either way. The link is named in lower
+# case on purpose — matching the binary's own capitalisation would work only on
+# a case-insensitive volume, and APFS can be formatted either way.
+LINK=/usr/local/bin/ezdisplay
+TARGET="$(cd "$DESTINATION" && pwd)/EZDisplay.app/Contents/MacOS/EZDisplay"
+LINKED=$(readlink "$LINK" 2>/dev/null)
+
+if [[ $LINKED == "$TARGET" ]]; then
+    echo "The ezdisplay command is already linked."
+elif [[ ( -L $LINK || -e $LINK ) && $LINKED != */EZDisplay.app/Contents/MacOS/EZDisplay ]]; then
+    # Something else owns that name. Replacing it would break whatever put it
+    # there, and this script has no way to know what that was.
+    echo "Leaving ${LINK} alone: it is not a link to EZDisplay."
+elif confirm "Add the ezdisplay command to ${LINK}? Needs an administrator password. (Y/n): " y
+then
+    if sudo mkdir -p "$(dirname "$LINK")" && sudo ln -sfn "$TARGET" "$LINK"; then
+        echo "The ezdisplay command is on your PATH. Try: ezdisplay list"
+    else
+        echo "Could not create ${LINK}. The app itself is installed." >&2
+    fi
+fi
+
 open "${DESTINATION}/EZDisplay.app"
 echo "EZDisplay is installed in ${DESTINATION}."

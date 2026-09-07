@@ -10,7 +10,9 @@
 
 import Foundation
 
-class CustomResolutionsStore {
+/// Exposed to Objective-C for the command line's `custom` subcommand, which
+/// edits the same override files from a process with no window.
+@objc class CustomResolutionsStore: NSObject {
 
     let vendorID: UInt32
     let productID: UInt32
@@ -39,10 +41,11 @@ class CustomResolutionsStore {
     static let dirformat  = "DisplayVendorID-%x"
     static let fileformat = "DisplayProductID-%x"
 
-    init(vendorID: UInt32, productID: UInt32, displayName: String) {
+    @objc init(vendorID: UInt32, productID: UInt32, displayName: String) {
         self.vendorID = vendorID
         self.productID = productID
         self.displayName = displayName
+        super.init()
     }
 
     private var sourceDirs: [String] {
@@ -63,7 +66,7 @@ class CustomResolutionsStore {
     /// The display's currently-defined custom scaled resolutions. Low-DPI
     /// counterparts of HiDPI entries are hidden (the UI only edits the "logical"
     /// resolutions the user thinks in).
-    func load() -> [Resolution] {
+    @objc func load() -> [Resolution] {
         plist = sourceFiles.compactMap { NSMutableDictionary(contentsOfFile: $0) }.first ?? NSMutableDictionary()
 
         var resolutions: [Resolution] = []
@@ -80,7 +83,7 @@ class CustomResolutionsStore {
     /// Persist `resolutions` to the override plist (admin auth required; effective
     /// after logout/reboot). Returns an AppleScript error dictionary, or nil on
     /// success. Regenerates the low-DPI counterparts macOS expects.
-    func save(_ resolutions: [Resolution]) -> NSDictionary? {
+    @objc func save(_ resolutions: [Resolution]) -> NSDictionary? {
         if let error = RestoreSettingsItem.backupSettings(originalPlistPath: sourceFiles.last!) {
             return error
         }
