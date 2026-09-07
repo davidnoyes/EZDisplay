@@ -378,6 +378,15 @@ static int SetMirroring(const EZCommandRequest &request)
 // they are written, which is why a change is reported from what was asked for
 // rather than from a second read.
 
+/// A minute count as the `HH:MM` the command line reads back in.
+static std::string ClockTime(NSInteger minute)
+{
+    char text[6];
+    snprintf(text, sizeof(text), "%02d:%02d", (int) (minute / 60), (int) (minute % 60));
+    return text;
+}
+
+
 static int ShowNightShift(const EZCommandRequest &request)
 {
     if (![EZNightShift supported]) {
@@ -392,17 +401,53 @@ static int ShowNightShift(const EZCommandRequest &request)
         return EZExitFailed;
     }
 
+    const EZNightShiftState state = [EZNightShift state];
+    // The schedule that `scheduled` would run, which is the one in force where
+    // there is one and the remembered choice where there is not, so the report
+    // and the menu agree about what the third state means.
+    const EZNightShiftMode scheduleMode = [EZPrefs resolvedNightShiftSchedule];
+    NSInteger from = 0, to = 0;
+    if (![EZNightShift getScheduleFrom: &from to: &to]) {
+        // Checked rather than assumed, because a refused read leaves the pair at
+        // zero and midnight to midnight would be reported as a real window.
+        fprintf(stderr, "Cannot read the Night Shift schedule.\n");
+        return EZExitFailed;
+    }
+
     if (request.json) {
         EZJSONObject object;
         object.addBool("enabled", on);
         object.addInt("warmth", warmth);
+        object.addString("state", state == EZNightShiftScheduled     ? "scheduled"
+                                : state == EZNightShiftUntilTomorrow ? "until-tomorrow"
+                                                                     : "off");
+        object.addString("schedule",
+                         scheduleMode == EZNightShiftModeSunset ? "sunset" : "custom");
+        // The window is reported whichever schedule is chosen, because the
+        // daemon keeps it either way and it is what custom would go back to.
+        object.addString("scheduleFrom", ClockTime(from));
+        object.addString("scheduleTo", ClockTime(to));
         fprintf(stdout, "%s\n", object.text().c_str());
         return EZExitKept;
     }
 
     // The warmth is shown whether it is on or not, because it is what turning
     // it on would give you.
-    fprintf(stdout, "Night Shift is %s, warmth %d%%.\n", on ? "on" : "off", warmth);
+    switch (state) {
+        case EZNightShiftOff:
+            fprintf(stdout, "Night Shift is off, warmth %d%%.\n", warmth);
+            break;
+        case EZNightShiftUntilTomorrow:
+            fprintf(stdout, "Night Shift is on until tomorrow, warmth %d%%.\n", warmth);
+            break;
+        case EZNightShiftScheduled:
+            // Both halves, because the schedule alone does not say whether the
+            // tint is on this minute and the tint alone does not say why.
+            fprintf(stdout, "Night Shift is scheduled %s, %s now, warmth %d%%.\n",
+                    [EZNightShift descriptionOfScheduleMode: scheduleMode].UTF8String,
+                    on ? "on" : "off", warmth);
+            break;
+    }
     return EZExitKept;
 }
 
@@ -427,18 +472,67 @@ static int SetNightShift(const EZCommandRequest &request)
         return EZExitKept;
     }
 
-    const BOOL wanted = request.on;
-    if (wanted == [EZNightShift enabled]) {
-        fprintf(stdout, "Night Shift is already %s.\n", wanted ? "on" : "off");
+    if (request.toggleAction == EZToggleActionSchedule) {
+        const EZNightShiftMode wanted = request.scheduleKind == EZScheduleSunset
+                                      ? EZNightShiftModeSunset : EZNightShiftModeCustom;
+
+        // Refused rather than stored, because a sunset schedule this Mac is not
+        // allowed to run would sit in the Preferences popup looking chosen and
+        // never turn the tint on. System Settings drops the choice for the same
+        // reason.
+        if (wanted == EZNightShiftModeSunset && ![EZNightShift sunSchedulePermitted]) {
+            fprintf(stderr, "Sunset to sunrise needs location services, which are off "
+                            "for Night Shift. Set a window instead, for example: "
+                            "ezdisplay nightshift schedule 22:00-07:00\n");
+            return EZExitFailed;
+        }
+
+        // The window before the kind: setting the kind applies it when a
+        // schedule is already running, and applying the old window first would
+        // tint on last night's hours for as long as it took to write the new
+        // one.
+        if (wanted == EZNightShiftModeCustom &&
+            ![EZNightShift setScheduleFrom: request.scheduleFrom to: request.scheduleTo]) {
+            fprintf(stderr, "Cannot set the Night Shift schedule.\n");
+            return EZExitFailed;
+        }
+
+        [EZPrefs setResolvedNightShiftSchedule: wanted];
+
+        // Said plainly when nothing is running it, for the same reason the
+        // warmth message says so: the command succeeded and the screen did not
+        // change, which reads as a failure without a word about it.
+        fprintf(stdout, "Night Shift schedule %s%s\n",
+                [EZNightShift descriptionOfScheduleMode: wanted].UTF8String,
+                [EZNightShift state] == EZNightShiftScheduled
+                    ? "." : ". Night Shift is not running it: ezdisplay nightshift scheduled");
         return EZExitKept;
     }
 
-    if (![EZNightShift setEnabled: wanted]) {
-        fprintf(stderr, "Cannot turn Night Shift %s.\n", wanted ? "on" : "off");
+    const EZNightShiftState wanted =
+        request.toggleAction == EZToggleActionScheduled ? EZNightShiftScheduled
+                              : request.on              ? EZNightShiftUntilTomorrow
+                                                        : EZNightShiftOff;
+    static const char *const names[] = {"off", "on until tomorrow", "scheduled"};
+
+    if (wanted == [EZNightShift state]) {
+        fprintf(stdout, "Night Shift is already %s.\n", names[wanted]);
+        return EZExitKept;
+    }
+
+    const EZNightShiftMode scheduleMode = [EZPrefs resolvedNightShiftSchedule];
+    if (![EZNightShift setState: wanted scheduleMode: scheduleMode]) {
+        fprintf(stderr, "Cannot set Night Shift %s.\n", names[wanted]);
         return EZExitFailed;
     }
 
-    fprintf(stdout, "Night Shift %s.\n", wanted ? "on" : "off");
+    if (wanted != EZNightShiftScheduled) {
+        fprintf(stdout, "Night Shift %s.\n", names[wanted]);
+        return EZExitKept;
+    }
+
+    fprintf(stdout, "Night Shift scheduled %s.\n",
+            [EZNightShift descriptionOfScheduleMode: scheduleMode].UTF8String);
     return EZExitKept;
 }
 

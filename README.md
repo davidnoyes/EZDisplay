@@ -19,7 +19,7 @@ attached display](etc/screenshot.png)
   offers a choice.
 - Turns display mirroring on and off.
 - Turns Night Shift and True Tone on and off, and sets how warm Night Shift
-  gets, without opening **System Settings**.
+  gets and when it runs, without opening **System Settings**.
 - Adds custom scaled resolutions by writing a display override file, and
   removes them again later.
 - Reverts a change automatically if you do not confirm it, so a mode that
@@ -65,9 +65,11 @@ list of recommended resolutions. Below those:
 - **Refresh Rate** switches rate without touching resolution.
 - **HDR** toggles high dynamic range.
 - **Display mirroring** toggles mirroring for the set.
-- **Night Shift** and **True Tone** toggle those two settings. They sit below
-  the per-display sections because they belong to the machine rather than to
-  one display, and each appears only where the hardware offers it, so **True
+- **Night Shift** opens a submenu offering the same three choices **System
+  Settings** does — **Off**, **On until tomorrow**, and **Scheduled**, which
+  names the schedule it would run. **True Tone** is a plain toggle. Both sit
+  below the per-display sections because they belong to the machine rather than
+  to one display, and each appears only where the hardware offers it, so **True
   Tone** is absent unless a display has the sensor for it.
 
 Change either from **System Settings** and the menu follows, so the tick always
@@ -92,6 +94,10 @@ modes; and these options:
   follows the slider as you drag it, so you can see what you are choosing.
   Warmth is separate from the toggle, as it is in **System Settings**: setting
   it does not turn Night Shift on.
+- **Schedule**, which decides what the menu's **Scheduled** choice runs —
+  **Custom**, with **From** and **To** times beside it, or **Sunset to
+  Sunrise**, which needs location services. Choosing a schedule does not start
+  it, but it does replace one that is already running.
 
 **Edit Custom Resolutions…** adds resolutions the display does not advertise.
 Give the resolution you want, not twice it: to get a HiDPI 1920×1080, add
@@ -131,7 +137,7 @@ ezdisplay list
 | `hdr on\|off` | Turn HDR on or off for one display |
 | `mirror on\|off` | Turn mirroring on or off for the whole set of displays |
 | `color list\|set <id>` | List the display's color modes, or apply one |
-| `nightshift [on\|off\|warmth <0-100>]` | Show Night Shift, turn it on or off, or set its warmth |
+| `nightshift [on\|off\|scheduled\|warmth <0-100>\|schedule sunset\|<HH:MM-HH:MM>]` | Show Night Shift, change its state, or set its warmth or schedule |
 | `truetone [on\|off]` | Show True Tone, or turn it on or off |
 | `custom list\|add\|remove` | List, add, or remove a custom resolution |
 | `restore` | Remove the display overrides EZDisplay created |
@@ -230,10 +236,38 @@ Called bare, each reports the state and exits `0`:
 ```bash
 ezdisplay nightshift              # Night Shift is off, warmth 50%.
 ezdisplay truetone                # True Tone is on.
-ezdisplay nightshift on
 ezdisplay truetone off
+```
+
+Night Shift has the three states **System Settings** offers, and one of them is
+always in force:
+
+```bash
+ezdisplay nightshift on           # on until tomorrow, as the checkbox does
+ezdisplay nightshift off          # off, and the schedule off with it
+ezdisplay nightshift scheduled    # hand the tint back to the schedule
+```
+
+`on` matches the checkbox in **System Settings**, which macOS clears at the next
+schedule boundary, so the command calls it on until tomorrow. `scheduled` takes
+that override off again, and the tint comes and goes on its own.
+
+`schedule` chooses which schedule `scheduled` runs. It does not start one, and
+says so when nothing is running it. Where a schedule is already running, the new
+one replaces it there and then, which can turn the tint on or off as the new
+window is or is not covering this minute:
+
+```bash
+ezdisplay nightshift schedule 22:00-07:00
+ezdisplay nightshift schedule sunset
 ezdisplay nightshift warmth 70
 ```
+
+A window may run past midnight, so `22:00-07:00` is an evening rather than an
+error. Write both times as `HH:MM` on a 24-hour clock. The two cannot be equal,
+because a window of no length is a typo rather than a schedule. `sunset` needs
+location services: where they are off, the command says which and exits `1`
+instead of storing a schedule that would never fire.
 
 Warmth runs from `0`, the coolest, to `100`, the warmest, matching the slider
 in **System Settings**. It is separate from the toggle, so setting it while

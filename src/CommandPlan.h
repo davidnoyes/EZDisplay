@@ -79,7 +79,20 @@ enum EZCustomAction {
 enum EZToggleAction {
     EZToggleActionShow,
     EZToggleActionSet,
-    EZToggleActionWarmth,   // `nightshift` only
+    EZToggleActionWarmth,     // `nightshift` only
+    EZToggleActionScheduled,  // `nightshift` only: hand the tint back to the schedule
+    EZToggleActionSchedule,   // `nightshift` only: say what the schedule is
+};
+
+/// Which kind of schedule Night Shift runs on, matching the **Schedule** popup
+/// in System Settings.
+///
+/// There is no third value for "no schedule". Off is not a kind of schedule but
+/// a state of Night Shift, and it is reached the same way the menu reaches it:
+/// `nightshift off`.
+enum EZScheduleKind {
+    EZScheduleSunset,   // sunset to sunrise, which needs location services
+    EZScheduleCustom,   // a window the user picked
 };
 
 /// Night Shift's warmth as CoreBrightness holds it — 0 to 1 — from the whole
@@ -96,6 +109,21 @@ float EZWarmthFromPercent(int percent);
 /// nearest, so the number shown for a warmth set from the same scale is the
 /// number that was asked for.
 int EZPercentFromWarmth(float warmth);
+
+/// Minutes past midnight from a `HH:MM`, or -1 when `text` is not one.
+///
+/// The hour may be written with one digit or two, because `9:00` is how a
+/// person writes nine o'clock. The minute must have both: `9:5` is as likely to
+/// be a slip for `9:50` as for `9:05`, and there is no reading of it that is
+/// safe to guess.
+int EZParseTimeOfDay(const std::string &text);
+
+/// A `HH:MM-HH:MM` window, into the two minute counts it names.
+///
+/// A window that runs backwards is the ordinary case rather than an error —
+/// 22:00 to 07:00 is the one macOS ships with — so the only window refused is
+/// one that starts and ends on the same minute, which has no length to run for.
+bool EZParseScheduleWindow(const std::string &text, int *fromMinute, int *toMinute);
 
 /// How a preference's value is written on the command line, which is also how
 /// the executor has to store it.
@@ -185,6 +213,10 @@ struct EZCommandRequest {
 
     EZToggleAction toggleAction  = EZToggleActionShow;
     int            warmthPercent = 0;
+
+    EZScheduleKind scheduleKind     = EZScheduleSunset;
+    int            scheduleFrom     = 0;   // minutes past midnight, custom only
+    int            scheduleTo       = 0;
 
     std::string prefName;        // empty: show every preference
     bool        prefFlag  = false;

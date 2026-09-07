@@ -576,8 +576,46 @@ bool EZParseCommandLine(int argc, const char *const *argv,
                 break;
             }
 
+            if (warmthIsMine && action == "scheduled") {
+                if (positionals.size() != 1)
+                    return fail("nightshift scheduled takes nothing else");
+                if (request->json)
+                    return fail("nightshift scheduled takes no --json: it changes "
+                                "the setting rather than printing it");
+
+                request->toggleAction = EZToggleActionScheduled;
+                break;
+            }
+
+            if (warmthIsMine && action == "schedule") {
+                // Both the wrong word count and the wrong word land on the same
+                // description, because a reader who got either one wrong needs
+                // to be told the same two forms.
+                static const std::string forms =
+                    "sunset, or a window written HH:MM-HH:MM";
+
+                if (positionals.size() != 2)
+                    return fail("nightshift schedule takes one schedule: " + forms);
+                if (request->json)
+                    return fail("nightshift schedule takes no --json: it changes "
+                                "the schedule rather than printing it");
+
+                if (positionals[1] == "sunset") {
+                    request->scheduleKind = EZScheduleSunset;
+                } else if (EZParseScheduleWindow(positionals[1], &request->scheduleFrom,
+                                                 &request->scheduleTo)) {
+                    request->scheduleKind = EZScheduleCustom;
+                } else {
+                    return fail("\"" + positionals[1] + "\" is not a schedule: " + forms);
+                }
+
+                request->toggleAction = EZToggleActionSchedule;
+                break;
+            }
+
             return fail(command + " takes on or off" +
-                        (warmthIsMine ? ", or warmth and a percentage" : "") +
+                        (warmthIsMine ? ", scheduled, warmth and a percentage, "
+                                        "or schedule and a window" : "") +
                         ", not \"" + action + "\"");
         }
 
@@ -625,6 +663,52 @@ int EZPercentFromWarmth(float warmth)
 }
 
 
+int EZParseTimeOfDay(const std::string &text)
+{
+    size_t colon = text.find(':');
+    if (colon == std::string::npos || text.find(':', colon + 1) != std::string::npos)
+        return -1;
+
+    const std::string hourText   = text.substr(0, colon);
+    const std::string minuteText = text.substr(colon + 1);
+
+    // The two halves are held to different widths on purpose: see the header.
+    // ParseWholeNumber does the rest, and it is the reason a sign is refused —
+    // it takes digits only, so `+9:00` never reaches the range check.
+    if (hourText.empty() || hourText.size() > 2 || minuteText.size() != 2)
+        return -1;
+
+    long hour = 0, minute = 0;
+    if (!ParseWholeNumber(hourText, &hour) || !ParseWholeNumber(minuteText, &minute))
+        return -1;
+
+    if (hour > 23 || minute > 59)
+        return -1;
+
+    return (int) (hour * 60 + minute);
+}
+
+
+bool EZParseScheduleWindow(const std::string &text, int *fromMinute, int *toMinute)
+{
+    size_t dash = text.find('-');
+    if (dash == std::string::npos)
+        return false;
+
+    // Split at the first dash and let the time parser judge both halves. A
+    // second dash therefore fails as part of a time rather than needing a count
+    // of its own: `22:00-07:00-09:00` leaves `07:00-09:00`, which is not one.
+    int from = EZParseTimeOfDay(text.substr(0, dash));
+    int to   = EZParseTimeOfDay(text.substr(dash + 1));
+    if (from < 0 || to < 0 || from == to)
+        return false;
+
+    *fromMinute = from;
+    *toMinute   = to;
+    return true;
+}
+
+
 std::string EZUsageText(const std::string &topic)
 {
     static const std::map<std::string, std::string> perCommand = {
@@ -669,15 +753,23 @@ std::string EZUsageText(const std::string &topic)
 
         {"nightshift",
          "Usage: ezdisplay nightshift [--json]\n"
-         "       ezdisplay nightshift on|off\n"
+         "       ezdisplay nightshift on|off|scheduled\n"
          "       ezdisplay nightshift warmth <0-100>\n"
+         "       ezdisplay nightshift schedule sunset|<HH:MM-HH:MM>\n"
          "\n"
-         "Shows whether Night Shift is on and how warm it is set, or changes either.\n"
-         "Night Shift is one setting for the whole machine, so this command takes no\n"
-         "display selector.\n"
+         "Shows how Night Shift is set, or changes it. Night Shift is one setting for\n"
+         "the whole machine, so this command takes no display selector.\n"
          "\n"
-         "Turning it on here is the same as turning it on in System Settings: a\n"
-         "schedule you have set still runs, and still turns it off again at sunrise.\n"},
+         "  on          Turn the tint on until tomorrow, which is what the checkbox in\n"
+         "              System Settings does. macOS clears it at the next schedule\n"
+         "              boundary\n"
+         "  off         Turn the tint off, and take the schedule off with it\n"
+         "  scheduled   Hand the tint back to the schedule, so it comes and goes on its\n"
+         "              own again\n"
+         "  warmth      How warm the tint is, 0 to 100, which is separate from whether\n"
+         "              it is on\n"
+         "  schedule    Which schedule `scheduled` runs. sunset needs location services;\n"
+         "              a window is written 22:00-07:00 and may run past midnight\n"},
 
         {"truetone",
          "Usage: ezdisplay truetone [--json]\n"
@@ -750,7 +842,8 @@ std::string EZUsageText(const std::string &topic)
         "  set        Change resolution, scale, or refresh rate\n"
         "  hdr        Turn HDR on or off\n"
         "  mirror     Turn display mirroring on or off\n"
-        "  nightshift Show, turn on or off, or set the warmth of Night Shift\n"
+        "  nightshift Show or change Night Shift: on, off, scheduled, warmth,\n"
+        "             schedule\n"
         "  truetone   Show, or turn on or off, True Tone\n"
         "  color      List or apply the display's colour modes\n"
         "  restore    Remove the display overrides EZDisplay created\n"

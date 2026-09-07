@@ -18,6 +18,7 @@ import ServiceManagement
     @objc static let showRefreshMenuKey  = "EZShowRefreshMenu"  // Bool
     @objc static let curatedCountKey     = "EZCuratedCount"     // Int
     @objc static let launchAtLoginKey    = "EZLaunchAtLogin"    // Bool (persisted mirror)
+    @objc static let nightShiftScheduleKey = "EZNightShiftSchedule"  // Int, an EZNightShiftMode
 
     /// Posted when a menu-behavior pref changes, so the menu can rebuild.
     @objc static let changedNotification = Notification.Name("EZPrefsChanged")
@@ -27,6 +28,11 @@ import ServiceManagement
             showStandardKey:   true,
             showRefreshMenuKey: true,
             curatedCountKey:    6,
+            // Custom rather than sunset to sunrise, because a custom window
+            // always runs: sunset needs location services, and defaulting to a
+            // schedule the machine may not be allowed to keep would give the
+            // menu's Scheduled item nothing to do.
+            nightShiftScheduleKey: EZNightShiftMode.custom.rawValue,
         ])
     }
 
@@ -43,11 +49,49 @@ import ServiceManagement
         set { UserDefaults.standard.set(newValue, forKey: curatedCountKey); notifyChanged() }
     }
 
+    /// Which schedule the menu's **Scheduled** item and `nightshift scheduled`
+    /// should run.
+    ///
+    /// A schedule already running is the answer, because that is what the user
+    /// is looking at; the stored value is only the memory of what to go back to
+    /// once Night Shift has been switched off, which takes the mode — and so
+    /// the kind — with it.
+    static var nightShiftSchedule: EZNightShiftMode {
+        get {
+            let live = EZNightShift.mode()
+            if live != .off { return live }
+
+            let stored = UserDefaults.standard.integer(forKey: nightShiftScheduleKey)
+            let kind = EZNightShiftMode(rawValue: stored) ?? .custom
+            // A sunset schedule stored before location services were turned off
+            // reads back as custom, so that every caller — the menu, the command
+            // line, and the popup below — is told the one schedule that would
+            // actually run. The stored value is left alone rather than
+            // corrected, because it is the choice to go back to if location
+            // services come on again. A live sunset mode above is exempt: what
+            // the daemon is running is true whatever permission now says.
+            if kind == .sunset && !EZNightShift.sunSchedulePermitted() { return .custom }
+            return kind
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: nightShiftScheduleKey)
+            // A schedule already running changes to the new kind now. Storing
+            // it alone would leave the popup and the tint disagreeing until
+            // something else moved the mode.
+            if EZNightShift.mode() != .off { _ = EZNightShift.setMode(newValue) }
+            notifyChanged()
+        }
+    }
+
     // Resolved values for the ObjC++ menu builder — one source of truth for
     // defaults instead of raw NSUserDefaults reads with a duplicated fallback.
     @objc static func resolvedShowStandard() -> Bool { showStandard }
     @objc static func resolvedShowRefreshMenu() -> Bool { showRefreshMenu }
     @objc static func resolvedCuratedCount() -> Int { curatedCount }
+    @objc static func resolvedNightShiftSchedule() -> EZNightShiftMode { nightShiftSchedule }
+    @objc static func setResolvedNightShiftSchedule(_ value: EZNightShiftMode) {
+        nightShiftSchedule = value
+    }
 
     // The same values the other way, for the command line's `prefs` subcommand.
     @objc static func setResolvedShowStandard(_ value: Bool) { showStandard = value }
@@ -123,6 +167,10 @@ class PreferencesViewController: NSViewController, NSTableViewDataSource, NSTabl
     private let curatedLabel = NSTextField(labelWithString: "")
     private let warmthSlider = NSSlider()
     private let warmthLabel = NSTextField(labelWithString: "")
+    private let schedulePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let scheduleFrom = NSDatePicker()
+    private let scheduleTo = NSDatePicker()
+    private var scheduleWindowRow: NSStackView?
     private var launchAtLoginCheck: NSButton?
     private let colorStatusLabel = NSTextField(labelWithString: "")
     private let colorTable = NSTableView()
@@ -165,6 +213,13 @@ class PreferencesViewController: NSViewController, NSTableViewDataSource, NSTabl
         NotificationCenter.default.addObserver(
             self, selector: #selector(reloadWarmth),
             name: NSApplication.didBecomeActiveNotification, object: nil)
+        // The schedule is reachable from three places — here, System Settings,
+        // and the command line — so it needs the same cue for the same reason.
+        // A second observer rather than one combined selector, because the two
+        // reloads are independent and either may be the one that fails.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(reloadSchedule),
+            name: NSApplication.didBecomeActiveNotification, object: nil)
     }
 
     deinit { NotificationCenter.default.removeObserver(self) }
@@ -174,6 +229,7 @@ class PreferencesViewController: NSViewController, NSTableViewDataSource, NSTabl
         // The active mode may have changed since the window was last shown.
         reloadModes()
         reloadWarmth()
+        reloadSchedule()
     }
 
     @objc private func screenParametersChanged() {
@@ -390,9 +446,37 @@ class PreferencesViewController: NSViewController, NSTableViewDataSource, NSTabl
             warmthRow.alignment = .centerY
             warmthRow.spacing = 8
 
+            // Which schedule the menu's Scheduled item runs. The menu offers the
+            // three states because they are one exclusive choice a click can
+            // make; this is the setting behind one of them, and it is a setting
+            // rather than a state — it keeps its value while Night Shift is off,
+            // which is the whole reason it is not in the menu.
+            schedulePopup.target = self
+            schedulePopup.action = #selector(scheduleKindChanged)
+            let scheduleRow = NSStackView(views: [NSTextField(labelWithString: "Schedule:"),
+                                                  schedulePopup])
+            scheduleRow.orientation = .horizontal
+            scheduleRow.alignment = .centerY
+            scheduleRow.spacing = 8
+
+            for picker in [scheduleFrom, scheduleTo] {
+                picker.datePickerStyle = .textFieldAndStepper
+                picker.datePickerElements = [.hourMinute]
+                picker.target = self
+                picker.action = #selector(scheduleWindowChanged)
+            }
+            let windowRow = NSStackView(views: [NSTextField(labelWithString: "From:"), scheduleFrom,
+                                                NSTextField(labelWithString: "To:"), scheduleTo])
+            windowRow.orientation = .horizontal
+            windowRow.alignment = .centerY
+            windowRow.spacing = 8
+            scheduleWindowRow = windowRow
+
+            reloadSchedule()
+
             nightShiftViews = [NSBox.separator(),
                                NSTextField(labelWithString: "Night Shift"),
-                               warmthRow]
+                               warmthRow, scheduleRow, windowRow]
         }
 
         // Bottom action buttons
@@ -455,6 +539,52 @@ class PreferencesViewController: NSViewController, NSTableViewDataSource, NSTabl
         // so the slider sits at the cool end rather than at a number nobody set.
         warmthSlider.integerValue = max(0, EZNightShift.warmthPercent())
         updateWarmthLabel()
+    }
+
+    /// Puts the schedule controls back on what is really set, the way
+    /// `reloadWarmth` does: the command line and System Settings can both move
+    /// this while the window is closed.
+    @objc private func reloadSchedule() {
+        guard EZNightShift.supported() else { return }
+
+        // Sunset to sunrise is dropped rather than disabled where location
+        // services are off, which is what System Settings does. A greyed row
+        // would say the choice exists and this Mac cannot have it, and there is
+        // nothing the user can do about it from here.
+        let sunAllowed = EZNightShift.sunSchedulePermitted()
+        schedulePopup.removeAllItems()
+        if sunAllowed { schedulePopup.addItem(withTitle: "Sunset to Sunrise") }
+        schedulePopup.addItem(withTitle: "Custom")
+
+        // `nightShiftSchedule` already reads a stored sunset schedule back as
+        // custom where location services are off, so the popup and the menu
+        // agree without this method writing anything: a reload runs on every
+        // refocus, and a write there would move a running schedule the user had
+        // not touched.
+        let custom = EZPrefs.nightShiftSchedule == .custom || !sunAllowed
+        schedulePopup.selectItem(at: custom && sunAllowed ? 1 : 0)
+
+        var from: Int = 0, to: Int = 0
+        if EZNightShift.getScheduleFrom(&from, to: &to) {
+            scheduleFrom.dateValue = Self.time(minutesPastMidnight: from)
+            scheduleTo.dateValue = Self.time(minutesPastMidnight: to)
+        }
+        // Only the custom schedule has a window to show, and an empty pair of
+        // time fields under "Sunset to Sunrise" reads as a window that is not
+        // being honored.
+        scheduleWindowRow?.isHidden = !custom
+    }
+
+    private static func time(minutesPastMidnight minutes: Int) -> Date {
+        // The day is arbitrary — only the hour and minute are read back — so any
+        // date the calendar will build one on will do.
+        Calendar.current.date(bySettingHour: minutes / 60, minute: minutes % 60,
+                              second: 0, of: Date()) ?? Date()
+    }
+
+    private static func minutesPastMidnight(of date: Date) -> Int {
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+        return (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
     }
 
     // MARK: Data
@@ -765,6 +895,23 @@ class PreferencesViewController: NSViewController, NSTableViewDataSource, NSTabl
             return
         }
         updateWarmthLabel()
+    }
+
+    @objc private func scheduleKindChanged() {
+        EZPrefs.nightShiftSchedule =
+            schedulePopup.titleOfSelectedItem == "Custom" ? .custom : .sunset
+        reloadSchedule()
+    }
+
+    @objc private func scheduleWindowChanged() {
+        let from = Self.minutesPastMidnight(of: scheduleFrom.dateValue)
+        let to = Self.minutesPastMidnight(of: scheduleTo.dateValue)
+        // Both ends on the same minute is a window with no length, which macOS
+        // is not documented to say which way it reads. Put back rather than
+        // written, for the same reason a refused warmth is.
+        if from == to || !EZNightShift.setScheduleFrom(from, to: to) {
+            reloadSchedule()
+        }
     }
 
     @available(macOS 13.0, *)
