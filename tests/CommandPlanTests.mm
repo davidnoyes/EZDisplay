@@ -1,0 +1,1085 @@
+//
+//  CommandPlanTests.mm
+//  EZDisplay
+//
+//  Tests for the decisions in src/CommandPlan.h: reading the arguments,
+//  choosing the display, and choosing the mode.
+//
+//  These are the parts of the command line that used to be wrong in ways no
+//  script could see. A mode change that matched nothing still exited zero; the
+//  refresh rate was printed but never filtered on, so a display offering 60,
+//  120, and 144 Hz at one geometry landed on whichever mode the private list
+//  happened to yield first; and `-h` meant height, so there was no way to ask
+//  for help. Each of those is a case below.
+//
+
+#import <XCTest/XCTest.h>
+#import "CommandPlan.h"
+
+#include <string>
+#include <vector>
+
+/// Parses a command line written the way a user would type it. `argv[0]` is
+/// added here so the tests read as the command rather than as an array.
+static bool ParseWords(const std::vector<std::string> &words,
+                       EZCommandRequest *request, std::string *error)
+{
+    std::vector<const char *> argv;
+    argv.push_back("ezdisplay");
+    for (const std::string &word : words)
+        argv.push_back(word.c_str());
+
+    return EZParseCommandLine((int) argv.size(), argv.data(), request, error);
+}
+
+/// The parse succeeded, and the caller wants the request it produced.
+static EZCommandRequest ParsedOK(const std::vector<std::string> &words)
+{
+    EZCommandRequest request;
+    std::string error;
+    XCTAssertTrue(ParseWords(words, &request, &error), @"%s", error.c_str());
+    return request;
+}
+
+static bool ParseFails(const std::vector<std::string> &words, std::string *error)
+{
+    EZCommandRequest request;
+    return !ParseWords(words, &request, error);
+}
+
+
+#pragma mark - Reading the arguments
+
+@interface CommandParsingTests : XCTestCase
+@end
+
+@implementation CommandParsingTests
+
+- (void)testNoArgumentsIsNotACommand
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({}, &error));
+    XCTAssertFalse(error.empty());
+}
+
+- (void)testHelpIsAskedForInAllThreeUsualWays
+{
+    // The defect this closes: `-h` used to mean height, so the one flag every
+    // Unix tool answers did nothing but print the usage as an error.
+    XCTAssertEqual(ParsedOK({"help"}).kind, EZCommandHelp);
+    XCTAssertEqual(ParsedOK({"--help"}).kind, EZCommandHelp);
+    XCTAssertEqual(ParsedOK({"-h"}).kind, EZCommandHelp);
+}
+
+- (void)testHelpTakesACommandToExplain
+{
+    EZCommandRequest request = ParsedOK({"help", "set"});
+    XCTAssertEqual(request.kind, EZCommandHelp);
+    XCTAssertEqual(request.helpTopic, std::string("set"));
+}
+
+- (void)testACommandExplainsItselfWithHelp
+{
+    EZCommandRequest request = ParsedOK({"set", "--help"});
+    XCTAssertEqual(request.kind, EZCommandHelp);
+    XCTAssertEqual(request.helpTopic, std::string("set"));
+}
+
+- (void)testAnUnknownCommandIsNamedInTheError
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"brightness"}, &error));
+    XCTAssertNotEqual(error.find("brightness"), std::string::npos);
+}
+
+- (void)testAnUnknownOptionIsNamedInTheError
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"set", "--bits", "32"}, &error));
+    XCTAssertNotEqual(error.find("--bits"), std::string::npos);
+}
+
+- (void)testSetTakesGeometryScaleAndRate
+{
+    EZCommandRequest request = ParsedOK({"set", "--width", "3008", "--height", "1692",
+                                         "--scale", "2.0", "--hz", "120"});
+    XCTAssertEqual(request.kind, EZCommandSet);
+    XCTAssertEqual(request.width, 3008);
+    XCTAssertEqual(request.height, 1692);
+    XCTAssertEqual(request.scale, 2.0);
+    XCTAssertEqual(request.refreshHz, 120);
+}
+
+- (void)testSetTakesTheShortFormsAndAttachedValues
+{
+    EZCommandRequest request = ParsedOK({"set", "-w", "1920", "--height=1080", "-z", "60"});
+    XCTAssertEqual(request.width, 1920);
+    XCTAssertEqual(request.height, 1080);
+    XCTAssertEqual(request.refreshHz, 60);
+}
+
+- (void)testSetWithNothingToChangeIsAnError
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"set"}, &error));
+    XCTAssertFalse(error.empty());
+}
+
+- (void)testAnOptionWithoutItsValueIsAnError
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"set", "--width"}, &error));
+    XCTAssertNotEqual(error.find("--width"), std::string::npos);
+}
+
+- (void)testANonNumericValueIsAnError
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"set", "--width", "wide"}, &error));
+    XCTAssertNotEqual(error.find("wide"), std::string::npos);
+}
+
+- (void)testAZeroSizeIsAnError
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"set", "--width", "0"}, &error));
+}
+
+- (void)testANumberTooLargeForTheFieldIsAnError
+{
+    // 2^32 truncates to zero in an int, and zero is this parser's word for "not
+    // given" — so without a range check a nonsense width would read as a width
+    // the caller never typed and quietly keep the current one.
+    std::string error;
+    XCTAssertTrue(ParseFails({"set", "--width", "4294967296", "--hz", "60"}, &error));
+    XCTAssertTrue(ParseFails({"set", "--hz", "99999999999999999999"}, &error));
+}
+
+- (void)testAnOptionMissingItsValueDoesNotEatTheNextOption
+{
+    // Taking `--height` as the width's value reports the wrong option as the
+    // bad one, which sends the reader looking in the wrong place.
+    std::string error;
+    XCTAssertTrue(ParseFails({"set", "--width", "--height", "1080"}, &error));
+    XCTAssertNotEqual(error.find("--width"), std::string::npos);
+}
+
+- (void)testAScaleMustBeAPositiveNumber
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"set", "--scale", "wide"}, &error));
+    XCTAssertTrue(ParseFails({"set", "--scale", "0"}, &error));
+    XCTAssertTrue(ParseFails({"set", "--scale", "2.0x"}, &error));
+    XCTAssertEqual(ParsedOK({"set", "--scale", "1.5"}).scale, 1.5);
+}
+
+- (void)testAFlagThatTakesNoValueRefusesOne
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"set", "--force=yes", "--width", "1920"}, &error));
+    XCTAssertTrue(ParseFails({"restore", "--all=yes"}, &error));
+}
+
+- (void)testHDRAndMirrorTakeOnAndOff
+{
+    XCTAssertTrue(ParsedOK({"hdr", "on"}).on);
+    XCTAssertFalse(ParsedOK({"hdr", "off"}).on);
+    XCTAssertEqual(ParsedOK({"mirror", "on"}).kind, EZCommandMirror);
+    XCTAssertFalse(ParsedOK({"mirror", "off"}).on);
+}
+
+- (void)testHDRWithoutAnAnswerIsAnError
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"hdr"}, &error));
+    XCTAssertTrue(ParseFails({"hdr", "maybe"}, &error));
+}
+
+- (void)testColorListsOrSets
+{
+    XCTAssertEqual(ParsedOK({"color"}).colorAction, EZColorActionList);
+    XCTAssertEqual(ParsedOK({"color", "list"}).colorAction, EZColorActionList);
+
+    EZCommandRequest request = ParsedOK({"color", "set", "113"});
+    XCTAssertEqual(request.colorAction, EZColorActionSet);
+    XCTAssertEqual(request.elementID, 113);
+}
+
+- (void)testColorSetNeedsAnElementID
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"color", "set"}, &error));
+    XCTAssertTrue(ParseFails({"color", "set", "brightest"}, &error));
+}
+
+- (void)testRestoreNeedsToKnowHowMuchToUndo
+{
+    XCTAssertTrue(ParsedOK({"restore", "--all"}).everyDisplay);
+    XCTAssertFalse(ParsedOK({"restore", "--display", "1"}).everyDisplay);
+
+    std::string error;
+    XCTAssertTrue(ParseFails({"restore"}, &error));
+}
+
+- (void)testRestoreRefusesToBeToldBothHowMuchToUndo
+{
+    // Resolving this in --all's favour would remove the overrides for every
+    // display when the caller named one, which is not a mistake to make
+    // silently.
+    std::string error;
+    XCTAssertTrue(ParseFails({"restore", "--all", "--display", "1"}, &error));
+}
+
+- (void)testForceIsRecognisedWhereverItAppears
+{
+    XCTAssertTrue(ParsedOK({"set", "--force", "--width", "1920"}).force);
+    XCTAssertTrue(ParsedOK({"hdr", "on", "-f"}).force);
+}
+
+- (void)testADisplayIsSelectedByIndex
+{
+    EZDisplaySelector selector = ParsedOK({"modes", "--display", "1"}).display;
+    XCTAssertTrue(selector.given);
+    XCTAssertTrue(selector.byIndex);
+    XCTAssertEqual(selector.index, 1);
+}
+
+- (void)testADisplayIsSelectedByVendorAndProduct
+{
+    EZDisplaySelector selector = ParsedOK({"modes", "-d", "0x610:0x8600"}).display;
+    XCTAssertTrue(selector.given);
+    XCTAssertFalse(selector.byIndex);
+    XCTAssertEqual(selector.vendor, 0x610u);
+    XCTAssertEqual(selector.product, 0x8600u);
+}
+
+- (void)testAVendorAndProductPairIsReadAsHexWithoutThePrefix
+{
+    // The listing prints the pair the way the override files spell it, which is
+    // hex without a prefix, and a user copies what they see.
+    EZDisplaySelector selector = ParsedOK({"modes", "-d", "610:8600"}).display;
+    XCTAssertEqual(selector.vendor, 0x610u);
+    XCTAssertEqual(selector.product, 0x8600u);
+}
+
+- (void)testAMalformedDisplaySelectorIsAnError
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"modes", "-d", "left"}, &error));
+    XCTAssertTrue(ParseFails({"modes", "-d", "610:"}, &error));
+    XCTAssertTrue(ParseFails({"modes", "-d", ""}, &error));
+
+    // Attached to the option, because a negative index as a separate token is
+    // caught earlier as a missing value and never reaches the selector.
+    XCTAssertTrue(ParseFails({"modes", "-d=-1"}, &error));
+
+    // A digit the pair is not written in, and a value too wide for the field
+    // the interface reports it in.
+    XCTAssertTrue(ParseFails({"modes", "-d", "zz:8600"}, &error));
+    XCTAssertTrue(ParseFails({"modes", "-d", "1ffffffff:8600"}, &error));
+}
+
+- (void)testEveryCommandRefusesAWordItHasNoUseFor
+{
+    // Each of these goes to its own branch of the parser, and each of those
+    // branches is the only thing standing between a mistyped subcommand and the
+    // command running as though the word were not there.
+    std::string error;
+    XCTAssertTrue(ParseFails({"list", "everything"}, &error));
+    XCTAssertTrue(ParseFails({"color", "list", "srgb"}, &error));
+    XCTAssertTrue(ParseFails({"color", "sett", "5"}, &error));
+    XCTAssertTrue(ParseFails({"set", "1920x1080", "--width", "1920"}, &error));
+    XCTAssertTrue(ParseFails({"custom", "list", "1920x1080"}, &error));
+    XCTAssertTrue(ParseFails({"restore", "--all", "please"}, &error));
+}
+
+- (void)testOptionsThatBelongToAnotherCommandAreRejected
+{
+    // `mirror` is the whole set of displays, so a display selector on it means
+    // the user expects something the command cannot do.
+    std::string error;
+    XCTAssertTrue(ParseFails({"mirror", "on", "--display", "1"}, &error));
+    XCTAssertTrue(ParseFails({"list", "--width", "1920"}, &error));
+
+    // The rest of the table, so widening one command's set is caught rather
+    // than merely being possible to catch.
+    XCTAssertTrue(ParseFails({"hdr", "on", "--width", "1920"}, &error));
+    XCTAssertTrue(ParseFails({"color", "list", "--hz", "60"}, &error));
+    XCTAssertTrue(ParseFails({"modes", "--force"}, &error));
+    XCTAssertTrue(ParseFails({"restore", "--all", "--force"}, &error));
+    XCTAssertTrue(ParseFails({"set", "--width", "1920", "--all"}, &error));
+    XCTAssertTrue(ParseFails({"list", "--force"}, &error));
+}
+
+- (void)testHelpExplainsOneCommandAtATime
+{
+    // Every other command refuses a word it does not understand; help saying
+    // nothing about the two it was handed would be the odd one out.
+    std::string error;
+    XCTAssertTrue(ParseFails({"help", "set", "modes"}, &error));
+}
+
+@end
+
+
+#pragma mark - The usage text
+
+@interface UsageTextTests : XCTestCase
+@end
+
+@implementation UsageTextTests
+
+- (void)testTheGeneralTextListsEveryCommand
+{
+    std::string usage = EZUsageText("");
+    for (const std::string &command : {"list", "modes", "set", "hdr", "mirror",
+                                       "color", "restore", "custom", "prefs", "help"})
+        XCTAssertNotEqual(usage.find(command), std::string::npos,
+                          @"the usage text does not mention %s", command.c_str());
+}
+
+- (void)testEveryCommandExplainsItself
+{
+    // A command with no text of its own falls back to the general listing,
+    // which reads as though `help` did not understand the name.
+    for (const std::string &command : {"list", "modes", "set", "hdr", "mirror",
+                                       "color", "restore", "custom", "prefs"})
+        XCTAssertNotEqual(EZUsageText(command), EZUsageText(""),
+                          @"%s has no help of its own", command.c_str());
+}
+
+- (void)testThePreferenceHelpNamesEveryPreference
+{
+    std::string usage = EZUsageText("prefs");
+    for (const EZPreferenceInfo &preference : EZPreferences())
+        XCTAssertNotEqual(usage.find(preference.name), std::string::npos,
+                          @"prefs help does not mention %s", preference.name.c_str());
+}
+
+- (void)testACommandsTextDescribesItsOwnOptions
+{
+    std::string usage = EZUsageText("set");
+    XCTAssertNotEqual(usage.find("--width"), std::string::npos);
+    XCTAssertNotEqual(usage.find("--hz"), std::string::npos);
+}
+
+- (void)testAnUnknownTopicFallsBackToTheGeneralText
+{
+    XCTAssertEqual(EZUsageText("bits"), EZUsageText(""));
+}
+
+@end
+
+
+#pragma mark - Choosing the display
+
+@interface DisplayResolutionTests : XCTestCase
+@end
+
+@implementation DisplayResolutionTests
+
+/// Two different monitors, and the main display first, as the display list
+/// reports them.
+static std::vector<EZDisplayIdentity> TwoDisplays()
+{
+    return {{0, 0x610, 0xa050, true}, {1, 0x489, 0x8600, false}};
+}
+
+- (void)testNoSelectorMeansTheMainDisplay
+{
+    EZDisplaySelector selector;
+    XCTAssertEqual(EZResolveDisplay(TwoDisplays(), selector), 0);
+}
+
+- (void)testTheMainDisplayIsFoundWhereverTheListPutsIt
+{
+    // The list is whatever order the interface reported, and only one of its
+    // entries says it is the main display. Taking the first entry instead would
+    // aim every unqualified command at the wrong monitor.
+    std::vector<EZDisplayIdentity> displays = {{0, 0x610, 0xa050, false},
+                                               {1, 0x489, 0x8600, true}};
+
+    EZDisplaySelector selector;
+    XCTAssertEqual(EZResolveDisplay(displays, selector), 1);
+}
+
+- (void)testWithNothingMarkedMainTheFirstDisplayIsUsed
+{
+    // Nothing should reach this: the display the window server draws the menu
+    // bar on is always in the list. Falling back to the first entry rather than
+    // failing keeps a command working if that ever stops being true.
+    std::vector<EZDisplayIdentity> displays = {{0, 0x610, 0xa050, false},
+                                               {1, 0x489, 0x8600, false}};
+
+    EZDisplaySelector selector;
+    XCTAssertEqual(EZResolveDisplay(displays, selector), 0);
+}
+
+- (void)testNoDisplaysAtAllFindsNothing
+{
+    // A Mac with the lid shut and nothing plugged in. This is the only guard
+    // between that and indexing an empty list, so it is checked for both the
+    // default display and a named one.
+    EZDisplaySelector none;
+    XCTAssertEqual(EZResolveDisplay({}, none), EZDisplayNotFound);
+
+    EZDisplaySelector byIndex;
+    byIndex.given = true;
+    byIndex.byIndex = true;
+    byIndex.index = 0;
+    XCTAssertEqual(EZResolveDisplay({}, byIndex), EZDisplayNotFound);
+
+    EZDisplaySelector byPair;
+    byPair.given = true;
+    byPair.vendor = 0x610;
+    byPair.product = 0xa050;
+    XCTAssertEqual(EZResolveDisplay({}, byPair), EZDisplayNotFound);
+}
+
+- (void)testAnIndexPicksThatPosition
+{
+    EZDisplaySelector selector;
+    selector.given = true;
+    selector.byIndex = true;
+    selector.index = 1;
+    XCTAssertEqual(EZResolveDisplay(TwoDisplays(), selector), 1);
+}
+
+- (void)testAnIndexPastTheEndFindsNothing
+{
+    EZDisplaySelector selector;
+    selector.given = true;
+    selector.byIndex = true;
+    selector.index = 5;
+    XCTAssertEqual(EZResolveDisplay(TwoDisplays(), selector), EZDisplayNotFound);
+}
+
+- (void)testAVendorAndProductPairPicksItsDisplay
+{
+    EZDisplaySelector selector;
+    selector.given = true;
+    selector.vendor = 0x489;
+    selector.product = 0x8600;
+    XCTAssertEqual(EZResolveDisplay(TwoDisplays(), selector), 1);
+}
+
+- (void)testAPairNoDisplayReportsFindsNothing
+{
+    EZDisplaySelector selector;
+    selector.given = true;
+    selector.vendor = 0x111;
+    selector.product = 0x222;
+    XCTAssertEqual(EZResolveDisplay(TwoDisplays(), selector), EZDisplayNotFound);
+}
+
+- (void)testTwoIdenticalMonitorsAreAmbiguousRatherThanACoinToss
+{
+    std::vector<EZDisplayIdentity> pair = {{0, 0x610, 0xa050}, {1, 0x610, 0xa050}};
+
+    EZDisplaySelector selector;
+    selector.given = true;
+    selector.vendor = 0x610;
+    selector.product = 0xa050;
+    XCTAssertEqual(EZResolveDisplay(pair, selector), EZDisplayAmbiguous);
+}
+
+- (void)testAnIndexStillSeparatesTwoIdenticalMonitors
+{
+    std::vector<EZDisplayIdentity> pair = {{0, 0x610, 0xa050}, {1, 0x610, 0xa050}};
+
+    EZDisplaySelector selector;
+    selector.given = true;
+    selector.byIndex = true;
+    selector.index = 1;
+    XCTAssertEqual(EZResolveDisplay(pair, selector), 1);
+}
+
+@end
+
+
+#pragma mark - Choosing the mode
+
+@interface ModeChoiceTests : XCTestCase
+@end
+
+@implementation ModeChoiceTests
+
+/// One geometry at three rates, a second geometry at three more, and a
+/// standard-scale entry, which is the shape that made the old first-match loop
+/// arbitrary.
+///
+/// The second geometry's rates are deliberately out of order, with the fastest
+/// neither first nor last in the list. Choosing the first or the last entry
+/// would then give the wrong answer, which a fixture in rate order would let
+/// through.
+static std::vector<EZModeCandidate> SampleModes()
+{
+    return {
+        {0, 3008, 1692,  60, 2.0},
+        {1, 3008, 1692, 120, 2.0},
+        {2, 3008, 1692, 144, 2.0},
+        {3, 1920, 1080,  60, 2.0},
+        {4, 1920, 1080,  60, 1.0},
+        {5, 1920, 1080,  75, 2.0},
+        {6, 1920, 1080,  50, 2.0},
+    };
+}
+
+static EZCommandRequest SetRequest()
+{
+    EZCommandRequest request;
+    request.kind = EZCommandSet;
+    return request;
+}
+
+- (void)testTheRequestedRateIsTheOneChosen
+{
+    EZCommandRequest request = SetRequest();
+    request.width = 3008;
+    request.height = 1692;
+    request.refreshHz = 144;
+
+    XCTAssertEqual(EZChooseMode(SampleModes(), request, SampleModes()[0]), 2);
+}
+
+- (void)testARateNoModeOffersFailsRatherThanLandingElsewhere
+{
+    // The old loop ignored the rate entirely and applied its first geometry
+    // match, so asking for 240 Hz quietly gave you 60.
+    EZCommandRequest request = SetRequest();
+    request.width = 3008;
+    request.height = 1692;
+    request.refreshHz = 240;
+
+    XCTAssertEqual(EZChooseMode(SampleModes(), request, SampleModes()[0]), -1);
+}
+
+- (void)testWithNoRateAskedForTheCurrentOneIsKept
+{
+    EZCommandRequest request = SetRequest();
+    request.width = 3008;
+    request.height = 1692;
+
+    XCTAssertEqual(EZChooseMode(SampleModes(), request, SampleModes()[1]), 1);
+}
+
+- (void)testWhereTheCurrentRateIsNotOfferedTheHighestIsTaken
+{
+    // Switching from 3008x1692 at 144 Hz to a geometry that does 60, 75, and
+    // 50. The rate has to move, and 75 is neither the first of those listed nor
+    // the last, so only comparing them gives the right answer.
+    EZCommandRequest request = SetRequest();
+    request.width = 1920;
+    request.height = 1080;
+
+    XCTAssertEqual(EZChooseMode(SampleModes(), request, SampleModes()[2]), 5);
+}
+
+- (void)testWhatIsLeftOutComesFromTheCurrentMode
+{
+    // Width alone, from the 1.0-scale 1920x1080 entry: the scale is kept, so
+    // the HiDPI mode of the same geometry is not the answer.
+    EZCommandRequest request = SetRequest();
+    request.width = 1920;
+
+    XCTAssertEqual(EZChooseMode(SampleModes(), request, SampleModes()[4]), 4);
+}
+
+- (void)testHeightAloneAndScaleAloneAlsoComeFromTheCurrentMode
+{
+    // Height alone, from the HiDPI 3008x1692 entry: the width and the scale are
+    // kept, and no mode offers 3008 wide by 1080 high, so this fails rather
+    // than dropping one of them.
+    EZCommandRequest byHeight = SetRequest();
+    byHeight.height = 1080;
+    XCTAssertEqual(EZChooseMode(SampleModes(), byHeight, SampleModes()[1]), -1);
+
+    // Scale alone, from the standard-scale 1920x1080 entry: the geometry is
+    // kept and only the scale moves, which is the HiDPI entry of the same size.
+    EZCommandRequest byScale = SetRequest();
+    byScale.scale = 2.0;
+    XCTAssertEqual(EZChooseMode(SampleModes(), byScale, SampleModes()[4]), 3);
+}
+
+- (void)testTwoModesDifferingOnlyInScaleAreNotTheSameMode
+{
+    // The listing marks the mode in force with a star, and 1920x1080 at 60Hz
+    // exists here at both scales. A comparison that left the scale out would
+    // star both rows and tell the user they are running two modes at once.
+    XCTAssertFalse(EZSameMode(SampleModes()[3], SampleModes()[4]));
+    XCTAssertTrue(EZSameMode(SampleModes()[3], SampleModes()[3]));
+
+    // The number is which entry of the private list it is, not part of what the
+    // mode is: the same mode reported twice is still one mode.
+    EZModeCandidate again = SampleModes()[3];
+    again.number = 99;
+    XCTAssertTrue(EZSameMode(SampleModes()[3], again));
+}
+
+- (void)testAScaleNoModeOffersAtThatGeometryFails
+{
+    EZCommandRequest request = SetRequest();
+    request.width = 3008;
+    request.height = 1692;
+    request.scale = 1.0;
+
+    XCTAssertEqual(EZChooseMode(SampleModes(), request, SampleModes()[0]), -1);
+}
+
+- (void)testFilteringNarrowsTheListingWithoutChoosing
+{
+    EZCommandRequest request;
+    request.kind = EZCommandModes;
+    request.refreshHz = 60;
+
+    std::vector<EZModeCandidate> filtered = EZFilterModes(SampleModes(), request);
+    XCTAssertEqual(filtered.size(), 3u);
+}
+
+- (void)testAnEmptyFilterKeepsEverything
+{
+    EZCommandRequest request;
+    request.kind = EZCommandModes;
+
+    XCTAssertEqual(EZFilterModes(SampleModes(), request).size(), SampleModes().size());
+}
+
+- (void)testDuplicatesCollapseAndTheFirstOfEachSurvives
+{
+    std::vector<EZModeCandidate> raw = {
+        {0, 3008, 1692, 120, 2.0},
+        {1, 3008, 1692, 120, 2.0},
+        {2, 3008, 1692,  60, 2.0},
+        {3, 3008, 1692, 120, 2.0},
+    };
+
+    std::vector<EZModeCandidate> deduped = EZDedupeModes(raw);
+    XCTAssertEqual(deduped.size(), 2u);
+    XCTAssertEqual(deduped[0].number, 0);
+    XCTAssertEqual(deduped[1].number, 2);
+}
+
+@end
+
+
+#pragma mark - Confirm or revert
+
+@interface ConfirmationPolicyTests : XCTestCase
+@end
+
+@implementation ConfirmationPolicyTests
+
+- (void)testAnInteractiveTerminalIsAsked
+{
+    XCTAssertTrue(EZShouldPrompt(/* force */ false, /* interactive */ true));
+}
+
+- (void)testAScriptIsNotAsked
+{
+    // Nobody is there to answer, so a countdown would revert every automated
+    // change 20 seconds later.
+    XCTAssertFalse(EZShouldPrompt(false, false));
+}
+
+- (void)testForceSkipsTheQuestion
+{
+    XCTAssertFalse(EZShouldPrompt(true, true));
+}
+
+- (void)testOnlyAnExplicitYesKeepsTheChange
+{
+    XCTAssertTrue(EZAnswerKeeps("y"));
+    XCTAssertTrue(EZAnswerKeeps("Y"));
+    XCTAssertTrue(EZAnswerKeeps("yes"));
+    XCTAssertTrue(EZAnswerKeeps("YES\n"));
+    XCTAssertTrue(EZAnswerKeeps("  y  "));
+}
+
+- (void)testEveryOtherAnswerReverts
+{
+    XCTAssertFalse(EZAnswerKeeps(""));
+    XCTAssertFalse(EZAnswerKeeps("\n"));
+    XCTAssertFalse(EZAnswerKeeps("n"));
+    XCTAssertFalse(EZAnswerKeeps("no"));
+    XCTAssertFalse(EZAnswerKeeps("yeah"));
+    XCTAssertFalse(EZAnswerKeeps("k"));
+}
+
+- (void)testEndOfInputReverts
+{
+    // The terminal closed, or the answer was piped in and ran out. Either way
+    // nobody said keep.
+    XCTAssertFalse(EZAnswerKeeps(NULL));
+}
+
+@end
+
+
+#pragma mark - Custom resolutions
+
+@interface CustomResolutionParsingTests : XCTestCase
+@end
+
+@implementation CustomResolutionParsingTests
+
+- (void)testCustomOnItsOwnLists
+{
+    // Same shape as `color`: the listing is the harmless action, so it is the
+    // one you get for typing the command and nothing else.
+    XCTAssertEqual(ParsedOK({"custom"}).kind, EZCommandCustom);
+    XCTAssertEqual(ParsedOK({"custom"}).customAction, EZCustomActionList);
+    XCTAssertEqual(ParsedOK({"custom", "list"}).customAction, EZCustomActionList);
+}
+
+- (void)testAddTakesTheResolutionTheUserWantsToSee
+{
+    EZCommandRequest request = ParsedOK({"custom", "add", "--width", "1920", "--height", "1080"});
+    XCTAssertEqual(request.customAction, EZCustomActionAdd);
+    XCTAssertEqual(request.width, 1920);
+    XCTAssertEqual(request.height, 1080);
+    XCTAssertFalse(request.hiDPI);
+}
+
+- (void)testTheHiDPIFlagIsCarried
+{
+    XCTAssertTrue(ParsedOK({"custom", "add", "--width", "1920", "--height", "1080", "--hidpi"}).hiDPI);
+}
+
+- (void)testAddAndRemoveBothNeedAWholeResolution
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"custom", "add", "--width", "1920"}, &error));
+    XCTAssertTrue(ParseFails({"custom", "add", "--height", "1080"}, &error));
+    XCTAssertTrue(ParseFails({"custom", "add"}, &error));
+    XCTAssertTrue(ParseFails({"custom", "remove", "--width", "1920"}, &error));
+    XCTAssertTrue(ParseFails({"custom", "remove"}, &error));
+}
+
+- (void)testRemoveNamesTheResolutionToDrop
+{
+    EZCommandRequest request = ParsedOK({"custom", "remove", "--width", "1600", "--height", "900"});
+    XCTAssertEqual(request.customAction, EZCustomActionRemove);
+    XCTAssertEqual(request.width, 1600);
+    XCTAssertEqual(request.height, 900);
+}
+
+- (void)testListingTakesNoResolution
+{
+    // Given a size, `custom list` would look like it filters, and it does not.
+    std::string error;
+    XCTAssertTrue(ParseFails({"custom", "list", "--width", "1920"}, &error));
+    XCTAssertTrue(ParseFails({"custom", "--hidpi"}, &error));
+}
+
+- (void)testAnUnknownActionIsRefused
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"custom", "fish"}, &error));
+    XCTAssertTrue(ParseFails({"custom", "add", "extra", "--width", "1", "--height", "1"}, &error));
+}
+
+- (void)testHiDPIBelongsToCustomAlone
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"set", "--width", "1920", "--hidpi"}, &error));
+    XCTAssertTrue(ParseFails({"modes", "--hidpi"}, &error));
+}
+
+- (void)testRemoveRefusesTheHiDPIFlag
+{
+    // Remove drops every custom entry of that size, so the flag would narrow
+    // nothing. Accepting and ignoring it would say the opposite.
+    std::string error;
+    XCTAssertTrue(ParseFails({"custom", "remove", "--width", "1", "--height", "1", "--hidpi"},
+                             &error));
+}
+
+- (void)testTheHiDPIFlagTakesNoValue
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"custom", "add", "--width", "1", "--height", "1", "--hidpi=yes"}, &error));
+}
+
+- (void)testCustomTakesADisplay
+{
+    EZCommandRequest request = ParsedOK({"custom", "list", "--display", "1"});
+    XCTAssertTrue(request.display.given);
+    XCTAssertEqual(request.display.index, 1);
+}
+
+@end
+
+
+#pragma mark - Preferences
+
+@interface PreferenceParsingTests : XCTestCase
+@end
+
+@implementation PreferenceParsingTests
+
+- (void)testPrefsOnItsOwnShowsEveryPreference
+{
+    EZCommandRequest request = ParsedOK({"prefs"});
+    XCTAssertEqual(request.kind, EZCommandPrefs);
+    XCTAssertTrue(request.prefName.empty());
+}
+
+- (void)testSettingAFlag
+{
+    EZCommandRequest off = ParsedOK({"prefs", "set", "show-standard", "off"});
+    XCTAssertEqual(off.prefName, std::string("show-standard"));
+    XCTAssertFalse(off.prefFlag);
+
+    XCTAssertTrue(ParsedOK({"prefs", "set", "show-standard", "on"}).prefFlag);
+}
+
+- (void)testSettingACount
+{
+    EZCommandRequest request = ParsedOK({"prefs", "set", "curated-count", "8"});
+    XCTAssertEqual(request.prefName, std::string("curated-count"));
+    XCTAssertEqual(request.prefCount, 8);
+}
+
+- (void)testACountOfZeroWouldEmptyTheMenu
+{
+    // The interface clamps this to 1 on read. The command line refuses instead,
+    // because a caller who asked for zero should hear that it is not a choice
+    // rather than find the value silently changed.
+    std::string error;
+    XCTAssertTrue(ParseFails({"prefs", "set", "curated-count", "0"}, &error));
+}
+
+- (void)testTheLoginItemIsAPreferenceLikeTheOthers
+{
+    XCTAssertTrue(ParsedOK({"prefs", "set", "launch-at-login", "yes"}).prefFlag);
+}
+
+- (void)testAnUnknownPreferenceNamesItself
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"prefs", "set", "nonsense", "on"}, &error));
+    XCTAssertNotEqual(error.find("nonsense"), std::string::npos);
+}
+
+- (void)testAValueHasToFitThePreference
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"prefs", "set", "show-standard", "maybe"}, &error));
+    XCTAssertTrue(ParseFails({"prefs", "set", "curated-count", "lots"}, &error));
+    XCTAssertTrue(ParseFails({"prefs", "set", "curated-count", "on"}, &error));
+}
+
+- (void)testSetNeedsBothANameAndAValue
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"prefs", "set"}, &error));
+    XCTAssertTrue(ParseFails({"prefs", "set", "show-standard"}, &error));
+    XCTAssertTrue(ParseFails({"prefs", "set", "show-standard", "on", "extra"}, &error));
+}
+
+- (void)testTheOnlyActionIsSet
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"prefs", "show-standard"}, &error));
+    XCTAssertTrue(ParseFails({"prefs", "get", "show-standard"}, &error));
+}
+
+- (void)testEveryPreferenceInTheTableCanBeSet
+{
+    // The table drives both the listing and the parser, so a preference added
+    // to it without a value shape the parser understands would fail only when
+    // someone tried to set it.
+    for (const EZPreferenceInfo &preference : EZPreferences()) {
+        const std::string value = preference.type == EZPreferenceCount ? "3" : "on";
+        EZCommandRequest request = ParsedOK({"prefs", "set", preference.name, value});
+        XCTAssertEqual(request.prefName, preference.name);
+    }
+}
+
+- (void)testLookupFindsWhatTheTableHoldsAndNothingElse
+{
+    XCTAssertTrue(EZFindPreference("curated-count") != NULL);
+    XCTAssertEqual(EZFindPreference("curated-count")->type, EZPreferenceCount);
+    XCTAssertTrue(EZFindPreference("launch-at-login") != NULL);
+    XCTAssertEqual(EZFindPreference("launch-at-login")->type, EZPreferenceLoginItem);
+    XCTAssertTrue(EZFindPreference("") == NULL);
+    XCTAssertTrue(EZFindPreference("curated_count") == NULL);
+}
+
+@end
+
+
+#pragma mark - Truth values
+
+@interface BooleanParsingTests : XCTestCase
+@end
+
+@implementation BooleanParsingTests
+
+- (void)testEverySpellingAShellUserReachesFor
+{
+    for (const std::string &yes : {"on", "true", "yes", "1", "ON", "True", "YES"}) {
+        bool value = false;
+        XCTAssertTrue(EZParseBool(yes, &value), @"%s", yes.c_str());
+        XCTAssertTrue(value, @"%s", yes.c_str());
+    }
+
+    for (const std::string &no : {"off", "false", "no", "0", "OFF", "False", "No"}) {
+        bool value = true;
+        XCTAssertTrue(EZParseBool(no, &value), @"%s", no.c_str());
+        XCTAssertFalse(value, @"%s", no.c_str());
+    }
+}
+
+- (void)testAnythingElseIsRefusedRatherThanReadAsFalse
+{
+    bool value = false;
+    XCTAssertFalse(EZParseBool("maybe", &value));
+    XCTAssertFalse(EZParseBool("", &value));
+    XCTAssertFalse(EZParseBool("2", &value));
+    XCTAssertFalse(EZParseBool("y", &value));
+}
+
+@end
+
+
+#pragma mark - JSON output
+
+@interface JSONStringTests : XCTestCase
+@end
+
+@implementation JSONStringTests
+
+- (void)testAPlainStringIsJustQuoted
+{
+    XCTAssertEqual(EZJSONString("PHL 34M2C8600"), std::string("\"PHL 34M2C8600\""));
+    XCTAssertEqual(EZJSONString(""), std::string("\"\""));
+}
+
+- (void)testTheTwoCharactersThatWouldEndOrEscapeTheString
+{
+    XCTAssertEqual(EZJSONString("a\"b"), std::string("\"a\\\"b\""));
+    XCTAssertEqual(EZJSONString("a\\b"), std::string("\"a\\\\b\""));
+}
+
+- (void)testTheWhitespaceEscapesJSONNames
+{
+    XCTAssertEqual(EZJSONString("a\nb"), std::string("\"a\\nb\""));
+    XCTAssertEqual(EZJSONString("a\tb"), std::string("\"a\\tb\""));
+    XCTAssertEqual(EZJSONString("a\rb"), std::string("\"a\\rb\""));
+}
+
+- (void)testAnyOtherControlCharacterBecomesAUnicodeEscape
+{
+    // A display name is whatever the monitor's EDID says, so it can carry a
+    // byte that no JSON parser accepts raw.
+    XCTAssertEqual(EZJSONString(std::string("a\x01" "b")), std::string("\"a\\u0001b\""));
+    XCTAssertEqual(EZJSONString(std::string("\x1f")), std::string("\"\\u001f\""));
+}
+
+@end
+
+
+#pragma mark - Machine-readable output
+
+@interface JSONFlagTests : XCTestCase
+@end
+
+@implementation JSONFlagTests
+
+- (void)testTheListingCommandsAllTakeIt
+{
+    XCTAssertTrue(ParsedOK({"list", "--json"}).json);
+    XCTAssertTrue(ParsedOK({"modes", "--json"}).json);
+    XCTAssertTrue(ParsedOK({"color", "list", "--json"}).json);
+    XCTAssertTrue(ParsedOK({"custom", "list", "--json"}).json);
+    XCTAssertTrue(ParsedOK({"prefs", "--json"}).json);
+}
+
+- (void)testACommandThatChangesSomethingDoesNot
+{
+    // There is no listing to render, so accepting the flag would promise
+    // structured output that never arrives.
+    std::string error;
+    XCTAssertTrue(ParseFails({"set", "--width", "1920", "--json"}, &error));
+    XCTAssertTrue(ParseFails({"hdr", "on", "--json"}, &error));
+    XCTAssertTrue(ParseFails({"mirror", "off", "--json"}, &error));
+    XCTAssertTrue(ParseFails({"restore", "--all", "--json"}, &error));
+}
+
+- (void)testTheTwoCommandsThatBothListAndChangeRefuseItOnlyWhenTheyChange
+{
+    // `color` and `custom` are one command each, so the flag cannot be settled
+    // by the command word alone: `color list --json` prints a listing and
+    // `color set 5 --json` changes the mode and has nothing to print.
+    std::string error;
+    XCTAssertTrue(ParseFails({"color", "set", "5", "--json"}, &error));
+    XCTAssertTrue(ParseFails({"custom", "add", "--width", "1920",
+                              "--height", "1080", "--json"}, &error));
+    XCTAssertTrue(ParseFails({"custom", "remove", "--width", "1920",
+                              "--height", "1080", "--json"}, &error));
+}
+
+- (void)testTheFlagTakesNoValue
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"list", "--json=yes"}, &error));
+}
+
+@end
+
+
+@interface JSONObjectTests : XCTestCase
+@end
+
+@implementation JSONObjectTests
+
+- (void)testAnObjectWithNoFields
+{
+    XCTAssertEqual(EZJSONObject().text(), std::string("{}"));
+}
+
+- (void)testFieldsComeOutInTheOrderTheyWereAdded
+{
+    EZJSONObject object;
+    object.addInt("index", 1);
+    object.addString("name", "PHL");
+
+    XCTAssertEqual(object.text(), std::string("{\"index\":1,\"name\":\"PHL\"}"));
+}
+
+- (void)testAStringValueIsEscaped
+{
+    EZJSONObject object;
+    object.addString("name", "a\"b");
+
+    XCTAssertEqual(object.text(), std::string("{\"name\":\"a\\\"b\"}"));
+}
+
+- (void)testATruthValueIsAJSONBooleanRatherThanANumber
+{
+    EZJSONObject object;
+    object.addBool("hdr", true);
+    object.addBool("mirrored", false);
+
+    XCTAssertEqual(object.text(), std::string("{\"hdr\":true,\"mirrored\":false}"));
+}
+
+- (void)testAScaleKeepsItsFractionAndLosesItsTrailingZero
+{
+    // 2.0 is the common case and reads badly as 2.000000, which is what the
+    // obvious format string gives.
+    EZJSONObject object;
+    object.addNumber("scale", 2.0);
+    object.addNumber("half", 1.5);
+
+    XCTAssertEqual(object.text(), std::string("{\"scale\":2,\"half\":1.5}"));
+}
+
+- (void)testAnArrayOfObjects
+{
+    XCTAssertEqual(EZJSONArray({}), std::string("[]"));
+    XCTAssertEqual(EZJSONArray({"{}", "{\"a\":1}"}), std::string("[{},{\"a\":1}]"));
+}
+
+@end

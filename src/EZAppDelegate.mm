@@ -447,40 +447,6 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 
 
 
-// Turn mirroring on (mirror all displays to the main one) or off. Reused by the
-// toggle and its revert closure.
-static CGError applyMirroring(BOOL on)
-{
-    CGDisplayCount count;
-    CGDirectDisplayID displays[kMaxDisplays];
-    CGGetOnlineDisplayList(kMaxDisplays, displays, &count);
-
-    // CoreGraphics states mirroring one display at a time, as "this display
-    // follows that one". kCGNullDirectDisplay is how it spells "follows
-    // nothing", so the same loop both builds the mirror set and dismantles it.
-    CGDirectDisplayID target = on ? CGMainDisplayID() : kCGNullDirectDisplay;
-
-    CGDisplayConfigRef configRef;
-    CGError error = CGBeginDisplayConfiguration(&configRef);
-    if (error != kCGErrorSuccess) return error;
-
-    for (CGDisplayCount i = 0; i < count; i++) {
-        // Nothing can be asked to follow itself. When unmirroring the target
-        // is the null display, which no real display ever matches, so every
-        // one of them is released.
-        if (displays[i] == target) continue;
-
-        error = CGConfigureDisplayMirrorOfDisplay(configRef, displays[i], target);
-        if (error != kCGErrorSuccess) {
-            CGCancelDisplayConfiguration(configRef);
-            return error;
-        }
-    }
-
-    return CGCompleteDisplayConfiguration(configRef, kCGConfigurePermanently);
-}
-
-
 // The same two menu problems toggleHDR: describes below, and the same answers.
 // A menu item does not toggle its own state when clicked, so the wanted value is
 // the inverse of what is shown; and what is shown can be out of date by the time
@@ -510,7 +476,7 @@ static CGError applyMirroring(BOOL on)
         return;
     }
 
-    CGError error = applyMirroring(wanted);
+    CGError error = [EZDisplays setMirroring: wanted];
 
     if (error != kCGErrorSuccess)
     {
@@ -526,7 +492,7 @@ static CGError applyMirroring(BOOL on)
 
     [SafeApply confirmWithTitle: @"Keep display mirroring change?"
                          detail: (wanted ? @"Mirroring on" : @"Mirroring off")
-                         revert: ^{ applyMirroring(!wanted); }];
+                         revert: ^{ [EZDisplays setMirroring: !wanted]; }];
 }
 
 

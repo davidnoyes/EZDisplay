@@ -6,6 +6,10 @@ DerivedData/
 *.xcarchive
 *.o
 
+# The scheme runs tests with coverage on, so a Debug binary run from here drops
+# a profile in the working directory.
+*.profraw
+
 # Per-user Xcode state, which is not shared between developers.
 xcuserdata/
 *.xcuserdatad
