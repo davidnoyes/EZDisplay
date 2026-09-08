@@ -42,6 +42,7 @@ enum EZCommandKind {
     EZCommandPrefs,
     EZCommandNightShift,
     EZCommandTrueTone,
+    EZCommandBrightness,
 };
 
 /// Which display a command applies to.
@@ -69,13 +70,18 @@ enum EZCustomAction {
     EZCustomActionRemove,
 };
 
-/// What a `nightshift` or `truetone` command was asked to do.
+/// What a `nightshift`, `truetone`, or `brightness` command was asked to do.
 ///
 /// Reporting the state is an action here rather than a command of its own,
 /// because `nightshift` and `nightshift on` are the same subject asked two
 /// different things. `hdr` and `mirror` have no equivalent: they predate this
 /// and always take a word, so they are left as they are rather than grown a
 /// bare form nobody has asked for.
+///
+/// `brightness` uses only the first two. Every value it takes is a percentage,
+/// so there is nothing for a sentinel in `brightnessPercent` to say that this
+/// does not — and zero, which such a sentinel would have to claim, is a real
+/// brightness.
 enum EZToggleAction {
     EZToggleActionShow,
     EZToggleActionSet,
@@ -95,20 +101,22 @@ enum EZScheduleKind {
     EZScheduleCustom,   // a window the user picked
 };
 
-/// Night Shift's warmth as CoreBrightness holds it — 0 to 1 — from the whole
-/// percentage the command line and the Preferences slider both deal in.
+/// A 0-to-1 value as the private frameworks hold it, from the whole percentage
+/// the command line and the sliders both deal in. Night Shift's warmth and a
+/// display's brightness are the same scale on the same conversion, so they
+/// share it rather than each rounding their own way.
 ///
-/// A percentage outside the range is clamped rather than refused, because both
-/// callers have already refused what a user could type wrong: the parser rejects
+/// A percentage outside the range is clamped rather than refused, because every
+/// caller has already refused what a user could type wrong: the parser rejects
 /// anything that is not 0 to 100, and a slider cannot leave its own track. The
-/// clamp is here so a future third caller cannot hand the private API a strength
-/// it never promised to accept.
-float EZWarmthFromPercent(int percent);
+/// clamp is here so a later caller cannot hand a private API a value it never
+/// promised to accept.
+float EZFractionFromPercent(int percent);
 
 /// The same value back, as the whole percentage a listing prints. Rounded to
-/// nearest, so the number shown for a warmth set from the same scale is the
+/// nearest, so the number shown for a value set from the same scale is the
 /// number that was asked for.
-int EZPercentFromWarmth(float warmth);
+int EZPercentFromFraction(float fraction);
 
 /// Minutes past midnight from a `HH:MM`, or -1 when `text` is not one.
 ///
@@ -211,8 +219,9 @@ struct EZCommandRequest {
 
     EZCustomAction customAction = EZCustomActionList;
 
-    EZToggleAction toggleAction  = EZToggleActionShow;
-    int            warmthPercent = 0;
+    EZToggleAction toggleAction      = EZToggleActionShow;
+    int            warmthPercent     = 0;
+    int            brightnessPercent = 0;
 
     EZScheduleKind scheduleKind     = EZScheduleSunset;
     int            scheduleFrom     = 0;   // minutes past midnight, custom only
