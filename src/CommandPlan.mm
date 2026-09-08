@@ -39,6 +39,7 @@ bool CommandFromWord(const std::string &word, EZCommandKind *kind)
         {"prefs",   EZCommandPrefs},
         {"nightshift", EZCommandNightShift},
         {"truetone",   EZCommandTrueTone},
+        {"brightness", EZCommandBrightness},
     };
 
     auto found = commands.find(word);
@@ -59,7 +60,8 @@ bool CommandAllowsOption(EZCommandKind kind, const std::string &name)
     if (name == "--display")
         return kind == EZCommandModes || kind == EZCommandSet
             || kind == EZCommandHDR   || kind == EZCommandColor
-            || kind == EZCommandRestore || kind == EZCommandCustom;
+            || kind == EZCommandRestore || kind == EZCommandCustom
+            || kind == EZCommandBrightness;
 
     if (name == "--width" || name == "--height")
         return kind == EZCommandModes || kind == EZCommandSet || kind == EZCommandCustom;
@@ -83,7 +85,7 @@ bool CommandAllowsOption(EZCommandKind kind, const std::string &name)
         return kind == EZCommandList  || kind == EZCommandModes
             || kind == EZCommandColor || kind == EZCommandCustom
             || kind == EZCommandPrefs || kind == EZCommandNightShift
-            || kind == EZCommandTrueTone;
+            || kind == EZCommandTrueTone || kind == EZCommandBrightness;
 
     return false;
 }
@@ -619,6 +621,35 @@ bool EZParseCommandLine(int argc, const char *const *argv,
                         ", not \"" + action + "\"");
         }
 
+        case EZCommandBrightness: {
+            if (positionals.empty()) {
+                request->toggleAction = EZToggleActionShow;
+                break;
+            }
+
+            // No `set` word in front of the number: brightness has one thing to
+            // change, so a word saying which would only ever have one value.
+            if (positionals.size() != 1)
+                return fail("brightness takes one whole percentage, 0 to 100");
+            // As with `color set`: the flag belongs to the bare reporting form,
+            // and only the argument count tells the two apart.
+            if (request->json)
+                return fail("brightness <percentage> takes no --json: it changes "
+                            "the brightness rather than printing it");
+
+            long percent = 0;
+            // Refused rather than clamped, for the reason `nightshift warmth`
+            // gives: `brightness 700` is a typo for 70, and clamping it would
+            // report success for full brightness nobody asked for.
+            if (!ParseWholeNumber(positionals[0], &percent) || percent > 100)
+                return fail("\"" + positionals[0] + "\" is not a brightness: a whole "
+                            "percentage from 0 to 100");
+
+            request->toggleAction = EZToggleActionSet;
+            request->brightnessPercent = (int) percent;
+            break;
+        }
+
         case EZCommandRestore: {
             if (!positionals.empty())
                 return fail("restore takes options, not \"" + positionals[0] + "\"");
@@ -644,7 +675,7 @@ bool EZParseCommandLine(int argc, const char *const *argv,
 }
 
 
-float EZWarmthFromPercent(int percent)
+float EZFractionFromPercent(int percent)
 {
     if (percent <= 0)   return 0.0f;
     if (percent >= 100) return 1.0f;
@@ -652,14 +683,14 @@ float EZWarmthFromPercent(int percent)
 }
 
 
-int EZPercentFromWarmth(float warmth)
+int EZPercentFromFraction(float fraction)
 {
-    if (warmth <= 0.0f) return 0;
-    if (warmth >= 1.0f) return 100;
-    // Rounded rather than truncated, so a warmth set from this same scale reads
+    if (fraction <= 0.0f) return 0;
+    if (fraction >= 1.0f) return 100;
+    // Rounded rather than truncated, so a value set from this same scale reads
     // back as the number that was asked for: 0.07f * 100 is 6.999999 in float,
-    // and truncating it reports 6% for a warmth of 7%.
-    return (int) lroundf(warmth * 100.0f);
+    // and truncating it reports 6% for a value of 7%.
+    return (int) lroundf(fraction * 100.0f);
 }
 
 
@@ -779,6 +810,17 @@ std::string EZUsageText(const std::string &topic)
          "setting for the whole machine, so this command takes no display selector,\n"
          "and a display that does not support it is reported rather than changed.\n"},
 
+        {"brightness",
+         "Usage: ezdisplay brightness [--display <selector>] [--json]\n"
+         "       ezdisplay brightness <0-100> [--display <selector>]\n"
+         "\n"
+         "Shows one display's brightness as a percentage, or sets it. Unlike Night\n"
+         "Shift and True Tone this belongs to a display rather than to the machine, so\n"
+         "it takes a selector.\n"
+         "\n"
+         "This is the same dial the brightness keys move, not the monitor's own menu.\n"
+         "A display macOS cannot dim is reported rather than changed.\n"},
+
         {"color",
          "Usage: ezdisplay color list [--display <selector>] [--json]\n"
          "       ezdisplay color set <element ID> [--display <selector>] [--force]\n"
@@ -845,6 +887,7 @@ std::string EZUsageText(const std::string &topic)
         "  nightshift Show or change Night Shift: on, off, scheduled, warmth,\n"
         "             schedule\n"
         "  truetone   Show, or turn on or off, True Tone\n"
+        "  brightness Show or set a display's brightness, 0 to 100\n"
         "  color      List or apply the display's colour modes\n"
         "  restore    Remove the display overrides EZDisplay created\n"
         "  custom     List, add, or remove a custom resolution\n"

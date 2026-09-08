@@ -31,6 +31,7 @@
 #import "ColorMode.h"
 #import "CoreBrightness.h"
 #import "DisplayModes.h"
+#import "DisplayServices.h"
 #import "utils.h"
 #import "EZDisplay-Swift.h"
 
@@ -581,6 +582,79 @@ static int SetTrueTone(const EZCommandRequest &request)
 }
 
 
+/// Why this display cannot be dimmed, or null when it can.
+///
+/// The two reasons are worth telling apart. A missing framework symbol is this
+/// build failing on a macOS it was not written for, and every display is then
+/// out of reach; a display that reports it cannot change is the ordinary case
+/// of a monitor macOS does not drive, and the rest still work.
+///
+/// Worded for both callers rather than for the one that sets. The capability is
+/// a single thing — a display macOS does not drive cannot be read either — so
+/// saying "cannot set" would have told someone who asked what the brightness is
+/// about a write they never attempted.
+static const char *WhyNoBrightness(CGDirectDisplayID display)
+{
+    if (![EZBrightness supported])
+        return "this version of macOS does not offer the brightness controls "
+               "EZDisplay uses";
+    if (![EZBrightness availableForDisplay: display])
+        return "macOS does not control this display's brightness. Use the "
+               "monitor's own buttons";
+    return NULL;
+}
+
+
+static int ShowBrightness(CGDirectDisplayID display, const EZCommandRequest &request)
+{
+    if (const char *why = WhyNoBrightness(display)) {
+        fprintf(stderr, "No brightness: %s.\n", why);
+        return EZExitFailed;
+    }
+
+    const NSInteger percent = [EZBrightness percentForDisplay: display];
+    if (percent < 0) {
+        fprintf(stderr, "Cannot read this display's brightness.\n");
+        return EZExitFailed;
+    }
+
+    if (request.json) {
+        EZJSONObject object;
+        object.addInt("percent", (long) percent);
+        fprintf(stdout, "%s\n", object.text().c_str());
+        return EZExitKept;
+    }
+
+    fprintf(stdout, "Brightness is %ld%%.\n", (long) percent);
+    return EZExitKept;
+}
+
+
+static int SetBrightnessPercent(CGDirectDisplayID display, const EZCommandRequest &request)
+{
+    if (const char *why = WhyNoBrightness(display)) {
+        fprintf(stderr, "No brightness: %s.\n", why);
+        return EZExitFailed;
+    }
+
+    if (![EZBrightness setPercent: request.brightnessPercent forDisplay: display]) {
+        fprintf(stderr, "Cannot set this display's brightness to %d%%.\n",
+                request.brightnessPercent);
+        return EZExitFailed;
+    }
+
+    // Read back rather than reporting what was asked for. The framework rounds
+    // to a step of its own choosing on some panels, and printing the request
+    // would claim a value the display is not at. There is no confirm-or-revert
+    // here for the same reason the two toggles have none: no brightness blanks
+    // the screen for good, and the next command puts it back.
+    const NSInteger now = [EZBrightness percentForDisplay: display];
+    fprintf(stdout, "Brightness is %ld%%.\n",
+            (long) (now < 0 ? request.brightnessPercent : now));
+    return EZExitKept;
+}
+
+
 static int ListColorModes(CGDirectDisplayID display, const EZCommandRequest &request)
 {
     NSArray<EZColorMode *> *modes = [EZColorModes supportedForDisplay: display];
@@ -1006,6 +1080,11 @@ int RunCommandLine(int argc, char *const *argv)
             return request.colorAction == EZColorActionList
                  ? ListColorModes(display, request)
                  : SetColorMode(display, request);
+
+        case EZCommandBrightness:
+            return request.toggleAction == EZToggleActionShow
+                 ? ShowBrightness(display, request)
+                 : SetBrightnessPercent(display, request);
 
         case EZCommandCustom:
             switch (request.customAction) {

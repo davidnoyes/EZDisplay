@@ -293,7 +293,7 @@ static BOOL ReadBlueLightStatus(EZBlueLightStatus *status)
     if (client == nil || ![client getStrength: &strength])
         return -1;
 
-    return EZPercentFromWarmth(strength);
+    return EZPercentFromFraction(strength);
 }
 
 
@@ -303,7 +303,7 @@ static BOOL ReadBlueLightStatus(EZBlueLightStatus *status)
     // Committed, so the warmth is still there after a restart. Uncommitted it
     // takes effect and survives the process that set it — the daemon holds it —
     // but nothing writes it down.
-    return client != nil && [client setStrength: EZWarmthFromPercent((int) percent) commit: YES];
+    return client != nil && [client setStrength: EZFractionFromPercent((int) percent) commit: YES];
 }
 
 

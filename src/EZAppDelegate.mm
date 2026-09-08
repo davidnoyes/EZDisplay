@@ -37,6 +37,8 @@ static const uint32_t kMaxDisplays = 0x10;
 - (void) toggleTrueTone: (NSMenuItem*) sender;
 - (NSMenuItem*) trueToneItem;
 - (void) setColorMode: (ColorModeMenuItem*) sender;
+- (void) observeBrightnessChanges;
+- (void) reloadBrightnessItems;
 - (void) scheduleMenuRefresh;
 - (void) settledMenuRefresh;
 - (NSMutableArray<ResMenuItem*>*) thin: (NSArray<ResMenuItem*>*) items
@@ -75,6 +77,11 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     // on reporting the old one until the link finishes settling, so this is
     // what the menu shows in the meantime.
     NSMutableDictionary<NSNumber *, NSNumber *> *pendingHDR;
+
+    // The brightness rows currently in the menu, in the order they were added.
+    // Held so a change from elsewhere can move the sliders where they stand,
+    // which is the one thing here that must not go through a rebuild.
+    NSMutableArray<BrightnessSliderItem *> *brightnessItems;
 }
 
 // An agent app is not the active one when its menu is clicked, and a panel put
@@ -98,6 +105,7 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 {
     [nativeInfoCache removeAllObjects];
     [EZColorModes invalidateCaches];
+    [self observeBrightnessChanges];
     [self refreshStatusMenu];
 }
 
@@ -178,6 +186,7 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 - (void) refreshStatusMenu
 {
     statusMenu = [[NSMenu alloc] initWithTitle: @""];
+    brightnessItems = [NSMutableArray new];
 
     BOOL showStandard      = [EZPrefs resolvedShowStandard];
     BOOL showRefreshMenu   = [EZPrefs resolvedShowRefreshMenu];
@@ -260,6 +269,17 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
             NSMenuItem* nativeItem = [[NSMenuItem alloc] initWithTitle: nativeText action: nil keyEquivalent: @""];
             [nativeItem setEnabled: NO];
             [statusMenu addItem: nativeItem];
+        }
+
+        // Above the separator, so the display's own dial sits with the lines
+        // naming the display rather than among the things it can be switched
+        // to. A monitor macOS cannot dim gets no row at all, which is the call
+        // the HDR item already makes.
+        BrightnessSliderItem* brightness = [BrightnessSliderItem itemForDisplay: display];
+        if (brightness)
+        {
+            [statusMenu addItem: brightness];
+            [brightnessItems addObject: brightness];
         }
 
         [statusMenu addItem: [NSMenuItem separatorItem]];
@@ -718,6 +738,28 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
                 onSettle: ^{ [self scheduleMenuRefresh]; }];
 }
 
+// Registration is per display, so this has to run again whenever the display
+// set changes; a monitor plugged in after launch would otherwise report nothing.
+- (void) observeBrightnessChanges
+{
+    __weak EZAppDelegate* weakSelf = self;
+    [EZBrightness observeChanges: ^{ [weakSelf reloadBrightnessItems]; }];
+}
+
+// A brightness change from anywhere — the function keys, System Settings, or
+// another app — moves the rows that are already on screen.
+//
+// Deliberately not refreshStatusMenu, which is what Night Shift and True Tone
+// do here: the brightness keys get pressed with the menu open, and a rebuild
+// would close it. Each row re-reads its own display, and one being dragged
+// ignores this so the knob stays under the pointer.
+- (void) reloadBrightnessItems
+{
+    for (BrightnessSliderItem* item in brightnessItems)
+        [item reload];
+}
+
+
 // The link takes a second or two to settle, so an immediate rebuild would read
 // the old state back.
 //
@@ -771,6 +813,10 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     __weak EZAppDelegate* weakSelf = self;
     [EZNightShift observeChanges: ^{ [weakSelf refreshStatusMenu]; }];
     [EZTrueTone   observeChanges: ^{ [weakSelf refreshStatusMenu]; }];
+
+    // Brightness takes the other route, for the reason reloadBrightnessItems
+    // gives: the rows move, the menu does not.
+    [self observeBrightnessChanges];
 
     // Build the menu before the status item exists, so the first thing shown in
     // the bar already has one rather than briefly clicking through to nothing.

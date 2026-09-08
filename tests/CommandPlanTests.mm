@@ -88,8 +88,8 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
 - (void)testAnUnknownCommandIsNamedInTheError
 {
     std::string error;
-    XCTAssertTrue(ParseFails({"brightness"}, &error));
-    XCTAssertNotEqual(error.find("brightness"), std::string::npos);
+    XCTAssertTrue(ParseFails({"contrast"}, &error));
+    XCTAssertNotEqual(error.find("contrast"), std::string::npos);
 }
 
 - (void)testAnUnknownOptionIsNamedInTheError
@@ -554,6 +554,111 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
     XCTAssertNotEqual(general.find("schedule\n"), std::string::npos);
 }
 
+- (void)testBrightnessesHelpGivesTheScaleAndSaysWhichDialItIs
+{
+    std::string usage = EZUsageText("brightness");
+
+    // The scale, because "brightness 200" is otherwise a reasonable guess.
+    XCTAssertNotEqual(usage.find("0-100"), std::string::npos);
+
+    // The selector, because this is the only one of the three display settings
+    // that belongs to a display rather than to the machine.
+    XCTAssertNotEqual(usage.find("--display"), std::string::npos);
+
+    // Which dial it moves. Someone whose monitor has its own brightness buttons
+    // has two, and nothing but this sentence says these are not the same one.
+    XCTAssertNotEqual(usage.find("brightness keys"), std::string::npos);
+}
+
+- (void)testBrightnessReportsItselfWhenAskedForNothing
+{
+    // The same shape as the two toggles: there is no other way to read the
+    // value, because brightness does not appear in `list`.
+    XCTAssertEqual(ParsedOK({"brightness"}).kind, EZCommandBrightness);
+    XCTAssertEqual(ParsedOK({"brightness"}).toggleAction, EZToggleActionShow);
+}
+
+- (void)testBrightnessTakesAWholePercentage
+{
+    // No `set` word in front of the number, unlike `nightshift warmth 70`.
+    // Brightness has only the one thing to change, so a word to say which would
+    // be a word with one possible value.
+    EZCommandRequest request = ParsedOK({"brightness", "40"});
+    XCTAssertEqual(request.kind, EZCommandBrightness);
+    XCTAssertEqual(request.toggleAction, EZToggleActionSet);
+    XCTAssertEqual(request.brightnessPercent, 40);
+
+    // Both ends of the scale are values, not mistakes. Zero especially: a
+    // display can be dimmed all the way, and refusing it would make the command
+    // line unable to reach a state the function keys reach.
+    XCTAssertEqual(ParsedOK({"brightness", "0"}).brightnessPercent, 0);
+    XCTAssertEqual(ParsedOK({"brightness", "100"}).brightnessPercent, 100);
+}
+
+- (void)testABrightnessOutsideTheScaleIsRefusedRatherThanClamped
+{
+    // As with `nightshift warmth`: clamping would read `brightness 700` — a
+    // typo for 70 — as full brightness and report success for it.
+    std::string error;
+    XCTAssertTrue(ParseFails({"brightness", "101"}, &error));
+    XCTAssertNotEqual(error.find("101"), std::string::npos);
+
+    XCTAssertTrue(ParseFails({"brightness", "700"}, &error));
+    XCTAssertNotEqual(error.find("700"), std::string::npos);
+
+    XCTAssertTrue(ParseFails({"brightness", "-1"}, &error));
+    XCTAssertNotEqual(error.find("-1"), std::string::npos);
+
+    XCTAssertTrue(ParseFails({"brightness", "half"}, &error));
+    XCTAssertNotEqual(error.find("half"), std::string::npos);
+
+    // Two numbers is about the count of words rather than either value, so the
+    // message says so instead of quoting one of them back.
+    XCTAssertTrue(ParseFails({"brightness", "50", "60"}, &error));
+    XCTAssertNotEqual(error.find("percentage"), std::string::npos);
+}
+
+- (void)testBrightnessBelongsToOneDisplayRatherThanToTheMachine
+{
+    // The opposite of Night Shift and True Tone. DisplayServices takes a display
+    // ID for every call, so a selector is the whole point rather than something
+    // the command cannot honour.
+    EZCommandRequest request = ParsedOK({"brightness", "40", "--display", "2"});
+    XCTAssertTrue(request.display.given);
+    XCTAssertTrue(request.display.byIndex);
+    XCTAssertEqual(request.display.index, 2);
+    XCTAssertTrue(ParsedOK({"brightness", "-d", "2"}).display.given);
+
+    // `--force` still goes: it skips the confirm-or-revert countdown, and
+    // brightness has none because no value of it blanks the screen for good.
+    std::string error;
+    XCTAssertTrue(ParseFails({"brightness", "40", "--force"}, &error));
+    XCTAssertNotEqual(error.find("--force"), std::string::npos);
+}
+
+- (void)testBrightnessTakesJSONOnlyWhenItReports
+{
+    XCTAssertTrue(ParsedOK({"brightness", "--json"}).json);
+
+    std::string error;
+    XCTAssertTrue(ParseFails({"brightness", "40", "--json"}, &error));
+    XCTAssertNotEqual(error.find("--json"), std::string::npos);
+}
+
+- (void)testABrightnessIsAWholeNumberWithoutItsUnit
+{
+    // Both are the slips a percentage invites, and both are refused today only
+    // because ParseWholeNumber happens to reject a non-digit. Nail that down
+    // here, so a looser number parser cannot quietly start reading "50%" as 50
+    // and "50.5" as 50.
+    std::string error;
+    XCTAssertTrue(ParseFails({"brightness", "50%"}, &error));
+    XCTAssertNotEqual(error.find("50%"), std::string::npos);
+
+    XCTAssertTrue(ParseFails({"brightness", "50.5"}, &error));
+    XCTAssertNotEqual(error.find("50.5"), std::string::npos);
+}
+
 @end
 
 
@@ -569,7 +674,8 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
     std::string usage = EZUsageText("");
     for (const std::string &command : {"list", "modes", "set", "hdr", "mirror",
                                        "color", "restore", "custom", "prefs",
-                                       "nightshift", "truetone", "help"})
+                                       "nightshift", "truetone", "brightness",
+                                       "help"})
         XCTAssertNotEqual(usage.find(command), std::string::npos,
                           @"the usage text does not mention %s", command.c_str());
 }
@@ -580,7 +686,7 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
     // which reads as though `help` did not understand the name.
     for (const std::string &command : {"list", "modes", "set", "hdr", "mirror",
                                        "color", "restore", "custom", "prefs",
-                                       "nightshift", "truetone"})
+                                       "nightshift", "truetone", "brightness"})
         XCTAssertNotEqual(EZUsageText(command), EZUsageText(""),
                           @"%s has no help of its own", command.c_str());
 }
@@ -608,55 +714,55 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
 @end
 
 
-#pragma mark - Night Shift warmth
+#pragma mark - The zero-to-one scale
 
-@interface WarmthScaleTests : XCTestCase
+@interface PercentScaleTests : XCTestCase
 @end
 
-@implementation WarmthScaleTests
+@implementation PercentScaleTests
 
 - (void)testTheScaleEndsAndItsMiddleMapBothWays
 {
-    XCTAssertEqualWithAccuracy(EZWarmthFromPercent(0),   0.0f, 0.0001);
-    XCTAssertEqualWithAccuracy(EZWarmthFromPercent(50),  0.5f, 0.0001);
-    XCTAssertEqualWithAccuracy(EZWarmthFromPercent(100), 1.0f, 0.0001);
+    XCTAssertEqualWithAccuracy(EZFractionFromPercent(0),   0.0f, 0.0001);
+    XCTAssertEqualWithAccuracy(EZFractionFromPercent(50),  0.5f, 0.0001);
+    XCTAssertEqualWithAccuracy(EZFractionFromPercent(100), 1.0f, 0.0001);
 
-    XCTAssertEqual(EZPercentFromWarmth(0.0f), 0);
-    XCTAssertEqual(EZPercentFromWarmth(0.5f), 50);
-    XCTAssertEqual(EZPercentFromWarmth(1.0f), 100);
+    XCTAssertEqual(EZPercentFromFraction(0.0f), 0);
+    XCTAssertEqual(EZPercentFromFraction(0.5f), 50);
+    XCTAssertEqual(EZPercentFromFraction(1.0f), 100);
 }
 
 - (void)testEveryPercentageSurvivesTheRoundTrip
 {
-    // The two halves are used together — a warmth set from the command line is
+    // The two halves are used together — a value set from the command line is
     // read back by the same command's listing — so a percentage that comes back
     // as its neighbour would report a value nobody set. Truncating instead of
     // rounding does exactly that: 0.07f * 100 is 6.999999 in float.
     for (int percent = 0; percent <= 100; percent++)
-        XCTAssertEqual(EZPercentFromWarmth(EZWarmthFromPercent(percent)), percent,
+        XCTAssertEqual(EZPercentFromFraction(EZFractionFromPercent(percent)), percent,
                        @"%d did not survive the round trip", percent);
 }
 
-- (void)testAWarmthFromElsewhereIsRoundedToTheNearestPercent
+- (void)testAValueFromElsewhereIsRoundedToTheNearestPercent
 {
-    // CoreBrightness holds a float, and nothing stops System Settings leaving
-    // one between two percentages. Rounding down would show 42% for a value
-    // nearer 43.
-    XCTAssertEqual(EZPercentFromWarmth(0.426f), 43);
-    XCTAssertEqual(EZPercentFromWarmth(0.424f), 42);
+    // Both frameworks hold a float, and nothing stops System Settings or the
+    // brightness keys leaving one between two percentages. Rounding down would
+    // show 42% for a value nearer 43.
+    XCTAssertEqual(EZPercentFromFraction(0.426f), 43);
+    XCTAssertEqual(EZPercentFromFraction(0.424f), 42);
 }
 
 - (void)testAValueOffEitherEndOfTheScaleIsClamped
 {
-    // Neither caller can produce one today: the parser refuses a percentage
-    // outside 0 to 100, and a slider cannot leave its track. The clamp is what
-    // stops a third caller handing the private API a strength it never promised
-    // to take, which is not a call worth finding out the behavior of.
-    XCTAssertEqualWithAccuracy(EZWarmthFromPercent(-40), 0.0f, 0.0001);
-    XCTAssertEqualWithAccuracy(EZWarmthFromPercent(140), 1.0f, 0.0001);
+    // No caller can produce one today: the parser refuses a percentage outside
+    // 0 to 100, and a slider cannot leave its track. The clamp is what stops a
+    // later caller handing a private API a value it never promised to take,
+    // which is not a call worth finding out the behavior of.
+    XCTAssertEqualWithAccuracy(EZFractionFromPercent(-40), 0.0f, 0.0001);
+    XCTAssertEqualWithAccuracy(EZFractionFromPercent(140), 1.0f, 0.0001);
 
-    XCTAssertEqual(EZPercentFromWarmth(-0.4f), 0);
-    XCTAssertEqual(EZPercentFromWarmth(1.4f), 100);
+    XCTAssertEqual(EZPercentFromFraction(-0.4f), 0);
+    XCTAssertEqual(EZPercentFromFraction(1.4f), 100);
 }
 
 @end

@@ -12,3 +12,4 @@
 #import "ColorMode.h"
 #import "CoreBrightness.h"
 #import "DisplayModes.h"
+#import "DisplayServices.h"
