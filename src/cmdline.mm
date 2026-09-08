@@ -30,6 +30,8 @@
 #import "CommandPlan.h"
 #import "ColorMode.h"
 #import "CoreBrightness.h"
+#import "DDC.h"
+#import "DDCProtocol.h"
 #import "DisplayModes.h"
 #import "DisplayServices.h"
 #import "utils.h"
@@ -655,6 +657,122 @@ static int SetBrightnessPercent(CGDirectDisplayID display, const EZCommandReques
 }
 
 
+/// Why this monitor's speakers cannot be reached over DDC, or null when they
+/// can. `code` names the one being asked for, so mute and volume each report
+/// their own: a monitor can implement one and not the other.
+///
+/// Worded for both callers, as `WhyNoBrightness` is, and for the same reason: a
+/// display that will not answer a read will not take a write either.
+static const char *WhyNoAudio(CGDirectDisplayID display, uint8_t code)
+{
+    if (![EZDisplayAudio supported])
+        return "this version of macOS does not offer the DDC calls EZDisplay uses";
+
+    const BOOL available = code == EZVCPAudioMute
+                         ? [EZDisplayAudio muteAvailableForDisplay: display]
+                         : [EZDisplayAudio availableForDisplay: display];
+    if (!available)
+        return "this monitor does not report that control over DDC. Use its own "
+               "buttons, or check that it has speakers at all";
+    return NULL;
+}
+
+
+static int ShowVolume(CGDirectDisplayID display, const EZCommandRequest &request)
+{
+    if (const char *why = WhyNoAudio(display, EZVCPSpeakerVolume)) {
+        fprintf(stderr, "No volume: %s.\n", why);
+        return EZExitFailed;
+    }
+
+    const NSInteger percent = [EZDisplayAudio percentForDisplay: display];
+    if (percent < 0) {
+        fprintf(stderr, "Cannot read this monitor's volume.\n");
+        return EZExitFailed;
+    }
+
+    if (request.json) {
+        EZJSONObject object;
+        object.addInt("percent", (long) percent);
+        fprintf(stdout, "%s\n", object.text().c_str());
+        return EZExitKept;
+    }
+
+    fprintf(stdout, "Volume is %ld%%.\n", (long) percent);
+    return EZExitKept;
+}
+
+
+static int SetVolumePercent(CGDirectDisplayID display, const EZCommandRequest &request)
+{
+    if (const char *why = WhyNoAudio(display, EZVCPSpeakerVolume)) {
+        fprintf(stderr, "No volume: %s.\n", why);
+        return EZExitFailed;
+    }
+
+    // A false answer here is a write the monitor did not take, not a write that
+    // failed to go out — every set is read back. Saying which is the difference
+    // between a bug to chase and a monitor that owns its own dial.
+    if (![EZDisplayAudio setPercent: request.volumePercent forDisplay: display]) {
+        fprintf(stderr, "This monitor did not take a volume of %d%%. It reported "
+                        "the write and left the dial where it was.\n",
+                request.volumePercent);
+        return EZExitFailed;
+    }
+
+    // Read back rather than reporting what was asked for, as brightness does.
+    // A display whose dial steps in twos lands on 52 for a request of 51, and
+    // printing 51 would name a value it is not at.
+    const NSInteger now = [EZDisplayAudio percentForDisplay: display];
+    fprintf(stdout, "Volume is %ld%%.\n",
+            (long) (now < 0 ? request.volumePercent : now));
+    return EZExitKept;
+}
+
+
+static int ShowMute(CGDirectDisplayID display, const EZCommandRequest &request)
+{
+    if (const char *why = WhyNoAudio(display, EZVCPAudioMute)) {
+        fprintf(stderr, "No mute: %s.\n", why);
+        return EZExitFailed;
+    }
+
+    const NSInteger muted = [EZDisplayAudio mutedForDisplay: display];
+    if (muted < 0) {
+        fprintf(stderr, "Cannot read whether this monitor is muted.\n");
+        return EZExitFailed;
+    }
+
+    if (request.json) {
+        EZJSONObject object;
+        object.addBool("muted", muted == 1);
+        fprintf(stdout, "%s\n", object.text().c_str());
+        return EZExitKept;
+    }
+
+    fprintf(stdout, "Mute is %s.\n", muted == 1 ? "on" : "off");
+    return EZExitKept;
+}
+
+
+static int SetMute(CGDirectDisplayID display, const EZCommandRequest &request)
+{
+    if (const char *why = WhyNoAudio(display, EZVCPAudioMute)) {
+        fprintf(stderr, "No mute: %s.\n", why);
+        return EZExitFailed;
+    }
+
+    if (![EZDisplayAudio setMuted: request.on forDisplay: display]) {
+        fprintf(stderr, "This monitor did not take mute %s.\n",
+                request.on ? "on" : "off");
+        return EZExitFailed;
+    }
+
+    fprintf(stdout, "Mute %s.\n", request.on ? "on" : "off");
+    return EZExitKept;
+}
+
+
 static int ListColorModes(CGDirectDisplayID display, const EZCommandRequest &request)
 {
     NSArray<EZColorMode *> *modes = [EZColorModes supportedForDisplay: display];
@@ -1085,6 +1203,16 @@ int RunCommandLine(int argc, char *const *argv)
             return request.toggleAction == EZToggleActionShow
                  ? ShowBrightness(display, request)
                  : SetBrightnessPercent(display, request);
+
+        case EZCommandVolume:
+            return request.toggleAction == EZToggleActionShow
+                 ? ShowVolume(display, request)
+                 : SetVolumePercent(display, request);
+
+        case EZCommandMute:
+            return request.toggleAction == EZToggleActionShow
+                 ? ShowMute(display, request)
+                 : SetMute(display, request);
 
         case EZCommandCustom:
             switch (request.customAction) {

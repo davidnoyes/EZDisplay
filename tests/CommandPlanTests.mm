@@ -662,6 +662,146 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
 @end
 
 
+#pragma mark - Volume and mute
+
+@interface VolumeParsingTests : XCTestCase
+@end
+
+@implementation VolumeParsingTests
+
+- (void)testVolumeHelpSaysWhoseSpeakersTheseAre
+{
+    std::string usage = EZUsageText("volume");
+
+    XCTAssertNotEqual(usage.find("0-100"), std::string::npos);
+    XCTAssertNotEqual(usage.find("--display"), std::string::npos);
+
+    // The one sentence that stops this being read as the Mac's output volume.
+    // They are separate dials, and moving the wrong one is silent: the sound
+    // gets quieter either way, and only the monitor's own display says which.
+    XCTAssertNotEqual(usage.find("monitor"), std::string::npos);
+}
+
+- (void)testVolumeReportsItselfWhenAskedForNothing
+{
+    XCTAssertEqual(ParsedOK({"volume"}).kind, EZCommandVolume);
+    XCTAssertEqual(ParsedOK({"volume"}).toggleAction, EZToggleActionShow);
+}
+
+- (void)testVolumeTakesAWholePercentage
+{
+    // The same shape as brightness, deliberately: one dial, so no word in front
+    // of the number, and the percentage is this project's unit even though the
+    // display's own range is whatever it published.
+    EZCommandRequest request = ParsedOK({"volume", "40"});
+    XCTAssertEqual(request.kind, EZCommandVolume);
+    XCTAssertEqual(request.toggleAction, EZToggleActionSet);
+    XCTAssertEqual(request.volumePercent, 40);
+
+    XCTAssertEqual(ParsedOK({"volume", "0"}).volumePercent, 0);
+    XCTAssertEqual(ParsedOK({"volume", "100"}).volumePercent, 100);
+}
+
+- (void)testAVolumeOutsideTheScaleIsRefusedRatherThanClamped
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"volume", "101"}, &error));
+    XCTAssertNotEqual(error.find("101"), std::string::npos);
+
+    XCTAssertTrue(ParseFails({"volume", "700"}, &error));
+    XCTAssertNotEqual(error.find("700"), std::string::npos);
+
+    XCTAssertTrue(ParseFails({"volume", "loud"}, &error));
+    XCTAssertNotEqual(error.find("loud"), std::string::npos);
+
+    XCTAssertTrue(ParseFails({"volume", "50", "60"}, &error));
+    XCTAssertNotEqual(error.find("percentage"), std::string::npos);
+
+    // Below the scale as well as above it. Volume shares its parsing arm with
+    // brightness, which tests this — and a shared arm is exactly where an
+    // untested half stops being covered the moment someone splits it.
+    XCTAssertTrue(ParseFails({"volume", "-1"}, &error));
+    XCTAssertNotEqual(error.find("-1"), std::string::npos);
+}
+
+- (void)testAVolumeIsAWholeNumberWithoutItsUnit
+{
+    // The same two slips a percentage invites, refused for the same reason as
+    // for brightness: ParseWholeNumber rejects a non-digit, and nothing else
+    // stops "50%" being read as 50.
+    std::string error;
+    XCTAssertTrue(ParseFails({"volume", "50%"}, &error));
+    XCTAssertNotEqual(error.find("50%"), std::string::npos);
+
+    XCTAssertTrue(ParseFails({"volume", "50.5"}, &error));
+    XCTAssertNotEqual(error.find("50.5"), std::string::npos);
+}
+
+- (void)testVolumeAndMuteBelongToOneDisplayAndTakeNoCountdown
+{
+    EZCommandRequest request = ParsedOK({"volume", "40", "--display", "2"});
+    XCTAssertTrue(request.display.given);
+    XCTAssertTrue(request.display.byIndex);
+    XCTAssertEqual(request.display.index, 2);
+    XCTAssertTrue(ParsedOK({"mute", "on", "-d", "2"}).display.given);
+
+    // `--force` skips the confirm-or-revert countdown, and neither of these has
+    // one: a monitor at the wrong volume is audible and reversible, unlike a
+    // resolution that leaves nothing on screen to click.
+    std::string error;
+    XCTAssertTrue(ParseFails({"volume", "40", "--force"}, &error));
+    XCTAssertTrue(ParseFails({"mute", "on", "--force"}, &error));
+}
+
+- (void)testVolumeBelongsToOneDisplay
+{
+    EZCommandRequest request = ParsedOK({"volume", "40", "--display", "2"});
+    XCTAssertTrue(request.display.given);
+    XCTAssertTrue(request.display.byIndex);
+    XCTAssertEqual(request.display.index, 2);
+}
+
+- (void)testVolumeTakesJSONOnlyWhenItReports
+{
+    XCTAssertTrue(ParsedOK({"volume", "--json"}).json);
+
+    std::string error;
+    XCTAssertTrue(ParseFails({"volume", "40", "--json"}, &error));
+    XCTAssertNotEqual(error.find("--json"), std::string::npos);
+}
+
+- (void)testMuteReadsAsATogglePerDisplay
+{
+    // Mute is the one setting here shaped like Night Shift rather than like
+    // brightness, because it has two states rather than a scale — but it still
+    // belongs to a display, so it keeps the selector the two machine-wide
+    // toggles have no use for.
+    XCTAssertEqual(ParsedOK({"mute"}).kind, EZCommandMute);
+    XCTAssertEqual(ParsedOK({"mute"}).toggleAction, EZToggleActionShow);
+
+    EZCommandRequest on = ParsedOK({"mute", "on", "--display", "2"});
+    XCTAssertEqual(on.toggleAction, EZToggleActionSet);
+    XCTAssertTrue(on.on);
+    XCTAssertEqual(on.display.index, 2);
+
+    XCTAssertFalse(ParsedOK({"mute", "off"}).on);
+}
+
+- (void)testMuteRefusesAnythingThatIsNotOnOrOff
+{
+    std::string error;
+    XCTAssertTrue(ParseFails({"mute", "toggle"}, &error));
+    XCTAssertNotEqual(error.find("toggle"), std::string::npos);
+
+    // As everywhere else: the flag belongs to the bare reporting form.
+    XCTAssertTrue(ParsedOK({"mute", "--json"}).json);
+    XCTAssertTrue(ParseFails({"mute", "on", "--json"}, &error));
+    XCTAssertNotEqual(error.find("--json"), std::string::npos);
+}
+
+@end
+
+
 #pragma mark - The usage text
 
 @interface UsageTextTests : XCTestCase
@@ -675,7 +815,7 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
     for (const std::string &command : {"list", "modes", "set", "hdr", "mirror",
                                        "color", "restore", "custom", "prefs",
                                        "nightshift", "truetone", "brightness",
-                                       "help"})
+                                       "volume", "mute", "help"})
         XCTAssertNotEqual(usage.find(command), std::string::npos,
                           @"the usage text does not mention %s", command.c_str());
 }
@@ -686,7 +826,8 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
     // which reads as though `help` did not understand the name.
     for (const std::string &command : {"list", "modes", "set", "hdr", "mirror",
                                        "color", "restore", "custom", "prefs",
-                                       "nightshift", "truetone", "brightness"})
+                                       "nightshift", "truetone", "brightness",
+                                       "volume", "mute"})
         XCTAssertNotEqual(EZUsageText(command), EZUsageText(""),
                           @"%s has no help of its own", command.c_str());
 }

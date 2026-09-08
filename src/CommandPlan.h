@@ -43,6 +43,8 @@ enum EZCommandKind {
     EZCommandNightShift,
     EZCommandTrueTone,
     EZCommandBrightness,
+    EZCommandVolume,
+    EZCommandMute,
 };
 
 /// Which display a command applies to.
@@ -70,7 +72,8 @@ enum EZCustomAction {
     EZCustomActionRemove,
 };
 
-/// What a `nightshift`, `truetone`, or `brightness` command was asked to do.
+/// What a `nightshift`, `truetone`, `brightness`, `volume`, or `mute` command
+/// was asked to do.
 ///
 /// Reporting the state is an action here rather than a command of its own,
 /// because `nightshift` and `nightshift on` are the same subject asked two
@@ -78,10 +81,11 @@ enum EZCustomAction {
 /// and always take a word, so they are left as they are rather than grown a
 /// bare form nobody has asked for.
 ///
-/// `brightness` uses only the first two. Every value it takes is a percentage,
-/// so there is nothing for a sentinel in `brightnessPercent` to say that this
-/// does not — and zero, which such a sentinel would have to claim, is a real
-/// brightness.
+/// `brightness` and `volume` use only the first two. Every value they take is a
+/// percentage, so there is nothing for a sentinel in `brightnessPercent` or
+/// `volumePercent` to say that this does not — and zero, which such a sentinel
+/// would have to claim, is a real setting for both. `mute` uses the same two
+/// with `on` instead of a percentage.
 enum EZToggleAction {
     EZToggleActionShow,
     EZToggleActionSet,
@@ -222,6 +226,7 @@ struct EZCommandRequest {
     EZToggleAction toggleAction      = EZToggleActionShow;
     int            warmthPercent     = 0;
     int            brightnessPercent = 0;
+    int            volumePercent     = 0;
 
     EZScheduleKind scheduleKind     = EZScheduleSunset;
     int            scheduleFrom     = 0;   // minutes past midnight, custom only
