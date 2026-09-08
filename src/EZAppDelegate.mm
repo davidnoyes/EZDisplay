@@ -28,7 +28,7 @@
 static const uint32_t kMaxDisplays = 0x10;
 
 
-@interface EZAppDelegate ()
+@interface EZAppDelegate () <NSMenuDelegate>
 - (void) displaysReconfigured;
 - (void) prefsChanged;
 - (void) toggleHDR: (NSMenuItem*) sender;
@@ -82,6 +82,11 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     // Held so a change from elsewhere can move the sliders where they stand,
     // which is the one thing here that must not go through a rebuild.
     NSMutableArray<BrightnessSliderItem *> *brightnessItems;
+
+    // The volume rows, held for the same reason and refreshed differently.
+    // Nothing notifies when a monitor's own buttons move its volume, so these
+    // re-read when the menu opens rather than on a change.
+    NSMutableArray<VolumeSliderItem *> *volumeItems;
 }
 
 // An agent app is not the active one when its menu is clicked, and a panel put
@@ -105,6 +110,10 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 {
     [nativeInfoCache removeAllObjects];
     [EZColorModes invalidateCaches];
+    // A cached AV service belongs to a monitor that was on a port. After a
+    // reconfiguration that may be a different monitor, or none, so keeping it
+    // would send one display's volume to another.
+    [EZDisplayAudio invalidateCaches];
     [self observeBrightnessChanges];
     [self refreshStatusMenu];
 }
@@ -186,7 +195,9 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 - (void) refreshStatusMenu
 {
     statusMenu = [[NSMenu alloc] initWithTitle: @""];
+    statusMenu.delegate = self;
     brightnessItems = [NSMutableArray new];
+    volumeItems     = [NSMutableArray new];
 
     BOOL showStandard      = [EZPrefs resolvedShowStandard];
     BOOL showRefreshMenu   = [EZPrefs resolvedShowRefreshMenu];
@@ -280,6 +291,15 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
         {
             [statusMenu addItem: brightness];
             [brightnessItems addObject: brightness];
+        }
+
+        // Under brightness, for the same reason brightness sits here: it is the
+        // display's own dial. Most monitors have no speakers and get no row.
+        VolumeSliderItem* volume = [VolumeSliderItem itemForDisplay: display];
+        if (volume)
+        {
+            [statusMenu addItem: volume];
+            [volumeItems addObject: volume];
         }
 
         [statusMenu addItem: [NSMenuItem separatorItem]];
@@ -757,6 +777,24 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 {
     for (BrightnessSliderItem* item in brightnessItems)
         [item reload];
+}
+
+
+// A DDC read is two frames and 50 ms of settle time per display, so doing this
+// in menuWillOpen would hold the menu closed for a tenth of a second on one
+// display and longer on two. Dispatched instead, so the menu is on screen
+// first and each row corrects itself a moment later — which it can do, because
+// a row updates in place rather than through a rebuild.
+- (void) menuWillOpen: (NSMenu*) menu
+{
+    if (menu != statusMenu || volumeItems.count == 0)
+        return;
+
+    NSArray<VolumeSliderItem *>* items = [volumeItems copy];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        for (VolumeSliderItem* item in items)
+            [item reload];
+    });
 }
 
 

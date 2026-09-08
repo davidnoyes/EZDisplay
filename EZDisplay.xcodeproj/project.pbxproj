@@ -30,6 +30,7 @@
 		C0570013A0B1C2D3E4F50013 /* SafeApply.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0570003A0B1C2D3E4F50003 /* SafeApply.swift */; };
 		C0570019A0B1C2D3E4F50019 /* ColorModeUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0570009A0B1C2D3E4F50009 /* ColorModeUI.swift */; };
 		E7D60002A0B1C2D3E4F50002 /* BrightnessSlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7D60001A0B1C2D3E4F50001 /* BrightnessSlider.swift */; };
+		D0C40002A0B1C2D3E4F50002 /* VolumeSlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0C40001A0B1C2D3E4F50001 /* VolumeSlider.swift */; };
 		E7E50018A0B1C2D3E4F50018 /* UtilsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7E50017A0B1C2D3E4F50017 /* UtilsTests.swift */; };
 		E7E50019A0B1C2D3E4F50019 /* Utils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FC72A1B24F664BA004E10E1 /* Utils.swift */; };
 		E7E5001AA0B1C2D3E4F5001A /* RestoreSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F48E61624FC761C0073123B /* RestoreSettings.swift */; };
@@ -42,6 +43,13 @@
 		A1B20011A0B1C2D3E4F50011 /* CommandPlan.mm in Sources */ = {isa = PBXBuildFile; fileRef = A1B20002A0B1C2D3E4F50002 /* CommandPlan.mm */; };
 		A1B20012A0B1C2D3E4F50012 /* CommandPlan.mm in Sources */ = {isa = PBXBuildFile; fileRef = A1B20002A0B1C2D3E4F50002 /* CommandPlan.mm */; };
 		A1B20013A0B1C2D3E4F50013 /* CommandPlanTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = A1B20003A0B1C2D3E4F50003 /* CommandPlanTests.mm */; };
+		D0C10011A0B1C2D3E4F50011 /* DDCProtocol.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C10002A0B1C2D3E4F50002 /* DDCProtocol.mm */; };
+		D0C10012A0B1C2D3E4F50012 /* DDCProtocol.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C10002A0B1C2D3E4F50002 /* DDCProtocol.mm */; };
+		D0C10013A0B1C2D3E4F50013 /* DDCProtocolTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C10003A0B1C2D3E4F50003 /* DDCProtocolTests.mm */; };
+		D0C20011A0B1C2D3E4F50011 /* DisplayPort.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C20002A0B1C2D3E4F50002 /* DisplayPort.mm */; };
+		D0C20012A0B1C2D3E4F50012 /* DisplayPort.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C20002A0B1C2D3E4F50002 /* DisplayPort.mm */; };
+		D0C30011A0B1C2D3E4F50011 /* DDC.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C30002A0B1C2D3E4F50002 /* DDC.mm */; };
+		D0C30012A0B1C2D3E4F50012 /* DDC.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C30002A0B1C2D3E4F50002 /* DDC.mm */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -80,6 +88,7 @@
 		C0570003A0B1C2D3E4F50003 /* SafeApply.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SafeApply.swift; sourceTree = "<group>"; };
 		C0570009A0B1C2D3E4F50009 /* ColorModeUI.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ColorModeUI.swift; sourceTree = "<group>"; };
 		E7D60001A0B1C2D3E4F50001 /* BrightnessSlider.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BrightnessSlider.swift; sourceTree = "<group>"; };
+		D0C40001A0B1C2D3E4F50001 /* VolumeSlider.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = VolumeSlider.swift; sourceTree = "<group>"; };
 		E7E50011A0B1C2D3E4F50011 /* EZDisplayTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EZDisplayTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E7E50017A0B1C2D3E4F50017 /* UtilsTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = UtilsTests.swift; sourceTree = "<group>"; };
 		E7E5001EA0B1C2D3E4F5001E /* RestoreSettingsTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = RestoreSettingsTests.swift; sourceTree = "<group>"; };
@@ -88,6 +97,13 @@
 		A1B20001A0B1C2D3E4F50001 /* CommandPlan.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CommandPlan.h; sourceTree = "<group>"; };
 		A1B20002A0B1C2D3E4F50002 /* CommandPlan.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = CommandPlan.mm; sourceTree = "<group>"; };
 		A1B20003A0B1C2D3E4F50003 /* CommandPlanTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = CommandPlanTests.mm; sourceTree = "<group>"; };
+		D0C10001A0B1C2D3E4F50001 /* DDCProtocol.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DDCProtocol.h; sourceTree = "<group>"; };
+		D0C10002A0B1C2D3E4F50002 /* DDCProtocol.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = DDCProtocol.mm; sourceTree = "<group>"; };
+		D0C10003A0B1C2D3E4F50003 /* DDCProtocolTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = DDCProtocolTests.mm; sourceTree = "<group>"; };
+		D0C20001A0B1C2D3E4F50001 /* DisplayPort.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DisplayPort.h; sourceTree = "<group>"; };
+		D0C20002A0B1C2D3E4F50002 /* DisplayPort.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = DisplayPort.mm; sourceTree = "<group>"; };
+		D0C30001A0B1C2D3E4F50001 /* DDC.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DDC.h; sourceTree = "<group>"; };
+		D0C30002A0B1C2D3E4F50002 /* DDC.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = DDC.mm; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -164,8 +180,15 @@
 				C0570003A0B1C2D3E4F50003 /* SafeApply.swift */,
 				C0570009A0B1C2D3E4F50009 /* ColorModeUI.swift */,
 				E7D60001A0B1C2D3E4F50001 /* BrightnessSlider.swift */,
+				D0C40001A0B1C2D3E4F50001 /* VolumeSlider.swift */,
 				A1B20001A0B1C2D3E4F50001 /* CommandPlan.h */,
 				A1B20002A0B1C2D3E4F50002 /* CommandPlan.mm */,
+				D0C30001A0B1C2D3E4F50001 /* DDC.h */,
+				D0C30002A0B1C2D3E4F50002 /* DDC.mm */,
+				D0C10001A0B1C2D3E4F50001 /* DDCProtocol.h */,
+				D0C10002A0B1C2D3E4F50002 /* DDCProtocol.mm */,
+				D0C20001A0B1C2D3E4F50001 /* DisplayPort.h */,
+				D0C20002A0B1C2D3E4F50002 /* DisplayPort.mm */,
 				35CC4996212C54AF00704BD7 /* bridging.h */,
 			);
 			path = src;
@@ -179,6 +202,7 @@
 				E7E50023A0B1C2D3E4F50023 /* ResolutionTests.swift */,
 				E7E50020A0B1C2D3E4F50020 /* ColorModeTests.mm */,
 				A1B20003A0B1C2D3E4F50003 /* CommandPlanTests.mm */,
+				D0C10003A0B1C2D3E4F50003 /* DDCProtocolTests.mm */,
 			);
 			path = tests;
 			sourceTree = "<group>";
@@ -309,7 +333,11 @@
 				C0570013A0B1C2D3E4F50013 /* SafeApply.swift in Sources */,
 				C0570019A0B1C2D3E4F50019 /* ColorModeUI.swift in Sources */,
 				E7D60002A0B1C2D3E4F50002 /* BrightnessSlider.swift in Sources */,
+				D0C40002A0B1C2D3E4F50002 /* VolumeSlider.swift in Sources */,
 				A1B20011A0B1C2D3E4F50011 /* CommandPlan.mm in Sources */,
+				D0C10011A0B1C2D3E4F50011 /* DDCProtocol.mm in Sources */,
+				D0C20011A0B1C2D3E4F50011 /* DisplayPort.mm in Sources */,
+				D0C30011A0B1C2D3E4F50011 /* DDC.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -328,6 +356,10 @@
 				E7E50022A0B1C2D3E4F50022 /* ColorMode.mm in Sources */,
 				A1B20012A0B1C2D3E4F50012 /* CommandPlan.mm in Sources */,
 				A1B20013A0B1C2D3E4F50013 /* CommandPlanTests.mm in Sources */,
+				D0C10012A0B1C2D3E4F50012 /* DDCProtocol.mm in Sources */,
+				D0C10013A0B1C2D3E4F50013 /* DDCProtocolTests.mm in Sources */,
+				D0C20012A0B1C2D3E4F50012 /* DisplayPort.mm in Sources */,
+				D0C30012A0B1C2D3E4F50012 /* DDC.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

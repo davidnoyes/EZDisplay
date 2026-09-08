@@ -40,6 +40,8 @@ bool CommandFromWord(const std::string &word, EZCommandKind *kind)
         {"nightshift", EZCommandNightShift},
         {"truetone",   EZCommandTrueTone},
         {"brightness", EZCommandBrightness},
+        {"volume",     EZCommandVolume},
+        {"mute",       EZCommandMute},
     };
 
     auto found = commands.find(word);
@@ -61,7 +63,8 @@ bool CommandAllowsOption(EZCommandKind kind, const std::string &name)
         return kind == EZCommandModes || kind == EZCommandSet
             || kind == EZCommandHDR   || kind == EZCommandColor
             || kind == EZCommandRestore || kind == EZCommandCustom
-            || kind == EZCommandBrightness;
+            || kind == EZCommandBrightness
+            || kind == EZCommandVolume || kind == EZCommandMute;
 
     if (name == "--width" || name == "--height")
         return kind == EZCommandModes || kind == EZCommandSet || kind == EZCommandCustom;
@@ -85,7 +88,8 @@ bool CommandAllowsOption(EZCommandKind kind, const std::string &name)
         return kind == EZCommandList  || kind == EZCommandModes
             || kind == EZCommandColor || kind == EZCommandCustom
             || kind == EZCommandPrefs || kind == EZCommandNightShift
-            || kind == EZCommandTrueTone || kind == EZCommandBrightness;
+            || kind == EZCommandTrueTone || kind == EZCommandBrightness
+            || kind == EZCommandVolume || kind == EZCommandMute;
 
     return false;
 }
@@ -535,7 +539,11 @@ bool EZParseCommandLine(int argc, const char *const *argv,
         }
 
         case EZCommandNightShift:
-        case EZCommandTrueTone: {
+        case EZCommandTrueTone:
+        // Mute joins these rather than brightness because it has two states
+        // rather than a scale. The error messages quote `command`, which is the
+        // word that was typed, so they read correctly for all three.
+        case EZCommandMute: {
             const bool warmthIsMine = request->kind == EZCommandNightShift;
 
             if (positionals.empty()) {
@@ -621,32 +629,37 @@ bool EZParseCommandLine(int argc, const char *const *argv,
                         ", not \"" + action + "\"");
         }
 
-        case EZCommandBrightness: {
+        // One dial each, on the same scale, so they parse the same way.
+        case EZCommandBrightness:
+        case EZCommandVolume: {
             if (positionals.empty()) {
                 request->toggleAction = EZToggleActionShow;
                 break;
             }
 
-            // No `set` word in front of the number: brightness has one thing to
+            // No `set` word in front of the number: each has one thing to
             // change, so a word saying which would only ever have one value.
             if (positionals.size() != 1)
-                return fail("brightness takes one whole percentage, 0 to 100");
+                return fail(command + " takes one whole percentage, 0 to 100");
             // As with `color set`: the flag belongs to the bare reporting form,
             // and only the argument count tells the two apart.
             if (request->json)
-                return fail("brightness <percentage> takes no --json: it changes "
-                            "the brightness rather than printing it");
+                return fail(command + " <percentage> takes no --json: it changes "
+                            "the " + command + " rather than printing it");
 
             long percent = 0;
             // Refused rather than clamped, for the reason `nightshift warmth`
             // gives: `brightness 700` is a typo for 70, and clamping it would
             // report success for full brightness nobody asked for.
             if (!ParseWholeNumber(positionals[0], &percent) || percent > 100)
-                return fail("\"" + positionals[0] + "\" is not a brightness: a whole "
-                            "percentage from 0 to 100");
+                return fail("\"" + positionals[0] + "\" is not a " + command +
+                            ": a whole percentage from 0 to 100");
 
             request->toggleAction = EZToggleActionSet;
-            request->brightnessPercent = (int) percent;
+            if (request->kind == EZCommandVolume)
+                request->volumePercent = (int) percent;
+            else
+                request->brightnessPercent = (int) percent;
             break;
         }
 
@@ -821,6 +834,26 @@ std::string EZUsageText(const std::string &topic)
          "This is the same dial the brightness keys move, not the monitor's own menu.\n"
          "A display macOS cannot dim is reported rather than changed.\n"},
 
+        {"volume",
+         "Usage: ezdisplay volume [--display <selector>] [--json]\n"
+         "       ezdisplay volume <0-100> [--display <selector>]\n"
+         "\n"
+         "Shows a monitor's own speaker volume as a percentage, or sets it. This is\n"
+         "the monitor's dial, reached over DDC, and not the Mac's output volume: the\n"
+         "two are separate, and turning one down leaves the other where it was.\n"
+         "\n"
+         "Only a display that reports the standard volume code can be set, and every\n"
+         "change is read back, so a monitor that ignores the write is reported rather\n"
+         "than claimed as changed. A monitor with no speakers is reported too.\n"},
+
+        {"mute",
+         "Usage: ezdisplay mute [--display <selector>] [--json]\n"
+         "       ezdisplay mute on|off [--display <selector>]\n"
+         "\n"
+         "Shows whether a monitor's own speakers are muted, or mutes them. Like\n"
+         "volume this is the monitor's control over DDC rather than the Mac's, and it\n"
+         "is a separate code: a monitor can offer one of the two and not the other.\n"},
+
         {"color",
          "Usage: ezdisplay color list [--display <selector>] [--json]\n"
          "       ezdisplay color set <element ID> [--display <selector>] [--force]\n"
@@ -888,6 +921,8 @@ std::string EZUsageText(const std::string &topic)
         "             schedule\n"
         "  truetone   Show, or turn on or off, True Tone\n"
         "  brightness Show or set a display's brightness, 0 to 100\n"
+        "  volume     Show or set a monitor's own speaker volume, 0 to 100\n"
+        "  mute       Show, or turn on or off, a monitor's own mute\n"
         "  color      List or apply the display's colour modes\n"
         "  restore    Remove the display overrides EZDisplay created\n"
         "  custom     List, add, or remove a custom resolution\n"

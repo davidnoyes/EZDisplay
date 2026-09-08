@@ -7,6 +7,7 @@
 #import <dlfcn.h>
 
 #import "ColorMode.h"
+#import "DisplayPort.h"
 
 // The colour-mode stack is entirely private and unversioned, so it is reached
 // through dlsym rather than linked. Every symbol is optional: if one is
@@ -25,10 +26,6 @@ typedef kern_return_t (*FnStartLink)(IOAVRef, const void *);
 typedef const char *(*FnEnumString)(uint32_t);
 typedef bool        (*FnHDRQuery)(CGDirectDisplayID);
 typedef void        (*FnHDRSet)(CGDirectDisplayID, bool);
-// Everything CoreDisplay knows about a display ID, including IODisplayLocation
-// — the registry path of the framebuffer it is attached to. That is what pairs
-// a display to one specific AV interface rather than to a model of monitor.
-typedef CFDictionaryRef (*FnDisplayInfo)(CGDirectDisplayID);
 
 static FnCreateWithService gCreateWithService;
 static FnCopy              gCopyColorElements;
@@ -43,7 +40,6 @@ static FnEnumString        gColorimetryString;
 static FnHDRQuery          gSupportsHDR;
 static FnHDRQuery          gIsHDREnabled;
 static FnHDRSet            gSetHDREnabled;
-static FnDisplayInfo       gDisplayInfo;
 
 // GetLinkData fills a struct describing the live link. Two of its fields are
 // verbatim copies of the ElementData blobs the enumerations hand back, so the
@@ -85,7 +81,6 @@ static void ResolveSymbols(void)
         gSupportsHDR           = (FnHDRQuery)dlsym(RTLD_DEFAULT, "CoreDisplay_Display_SupportsHDRMode");
         gIsHDREnabled          = (FnHDRQuery)dlsym(RTLD_DEFAULT, "CoreDisplay_Display_IsHDRModeEnabled");
         gSetHDREnabled         = (FnHDRSet)dlsym(RTLD_DEFAULT, "CoreDisplay_Display_SetHDRModeEnabled");
-        gDisplayInfo           = (FnDisplayInfo)dlsym(RTLD_DEFAULT, "CoreDisplay_DisplayCreateInfoDictionary");
     });
 }
 
@@ -244,58 +239,6 @@ static BOOL LinkIsLive(IOAVRef iface)
     return ReadLinkData(iface, linkData);
 }
 
-// The registry node naming the port a display is attached to — "dispext0" for
-// the first external one, and the same token the AV proxies for that port carry
-// in their own registry path.
-//
-// This is what identifies a *monitor* rather than a model of monitor. Two of
-// the same display are on two different ports, so their proxies sit under
-// different nodes however identical their product attributes are.
-//
-// nil when CoreDisplay will not say, or when the location is not shaped the way
-// this expects — an Intel Mac, or a later macOS that renames these nodes. The
-// caller falls back to matching on product alone, which is where it was before.
-//
-// Assumes one port means one monitor, which is true of a direct connection and
-// is the only case this has been tested against. Two identical displays behind a
-// DisplayPort MST hub would presumably share a port node, and this would then
-// pick between them on liveness alone — the ambiguity it exists to prevent. Not
-// reproduced, because there is no such hub here; noted because the code reads as
-// though it had been ruled out, and it has not.
-static NSString *PortNodeForDisplay(CGDirectDisplayID display)
-{
-    ResolveSymbols();
-    if (!gDisplayInfo)
-        return nil;
-
-    NSDictionary *info = (__bridge_transfer NSDictionary *)gDisplayInfo(display);
-    NSString *location = info[@"IODisplayLocation"];
-    if (![location isKindOfClass:[NSString class]])
-        return nil;
-
-    // ".../AppleH15IO/dispext0@4000000/IOMobileFramebufferShim" — the component
-    // that starts "disp" and carries a unit address is the one.
-    for (NSString *component in [location componentsSeparatedByString:@"/"])
-    {
-        NSRange at = [component rangeOfString:@"@"];
-        if (at.location != NSNotFound && [component hasPrefix:@"disp"])
-            return [component substringToIndex:at.location];
-    }
-    return nil;
-}
-
-// Whether this service sits under `portNode`. The proxies for the first
-// external display carry "/dispext0:dcpav-video-interface-epic:0/" in their
-// path; the trailing colon is required so that dispext1 does not match
-// dispext10.
-static BOOL ServiceIsOnPort(io_service_t service, NSString *portNode)
-{
-    io_string_t path = {0};
-    if (IORegistryEntryGetPath(service, kIOServicePlane, path) != KERN_SUCCESS)
-        return NO;
-    return [@(path) containsString:[NSString stringWithFormat:@"/%@:", portNode]];
-}
-
 // How many online displays report this manufacturer and product.
 static NSUInteger CountDisplaysSharingProduct(uint32_t vendor, uint32_t product)
 {
@@ -325,7 +268,7 @@ static IOAVRef CopyAVInterfaceForDisplay(CGDirectDisplayID display)
 
     // nil on anything this does not recognise, which costs only the fallback to
     // matching on product alone.
-    NSString *portNode = PortNodeForDisplay(display);
+    NSString *portNode = EZPortNodeForDisplay(display);
 
     // Held by the array, which keeps every candidate alive until one is chosen.
     NSMutableArray *matched = [NSMutableArray array];
@@ -346,7 +289,7 @@ static IOAVRef CopyAVInterfaceForDisplay(CGDirectDisplayID display)
             {
                 [matched addObject:(__bridge id)iface];
                 [liveness addObject:@(LinkIsLive(iface))];
-                [onPort addObject:@(portNode && ServiceIsOnPort(service, portNode))];
+                [onPort addObject:@(portNode && EZServiceIsOnPort(service, portNode))];
             }
             CFRelease(iface);
         }
