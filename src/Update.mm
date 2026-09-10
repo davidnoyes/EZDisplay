@@ -158,6 +158,11 @@ bool EndsWith(const std::string &text, const std::string &suffix)
 
 }  // namespace
 
+bool EZUpdateRequirementIsAdHoc(const std::string &requirement)
+{
+    return requirement.find("cdhash") != std::string::npos;
+}
+
 bool EZUpdateCanReplaceBundle(const std::string &bundlePath, std::string *reason)
 {
     if (!EndsWith(bundlePath, ".app")) {
@@ -404,15 +409,15 @@ static BOOL SignedLikeThisApp(NSURL *candidate, NSString **error)
         return NO;
     }
 
-    // An ad-hoc signature's requirement is this exact build's code hash, which
-    // no other build can satisfy, so the check below would refuse every genuine
-    // update as tampered. A developer build is the only way to be here, and
-    // saying so is more use than a security warning that is not one.
+    // An ad-hoc requirement would refuse every genuine update as tampered. A
+    // developer build is the only way to be here, and saying so is more use
+    // than a security warning that is not one.
     CFStringRef text = NULL;
 
     if (SecRequirementCopyString(requirement, kSecCSDefaultFlags, &text) ==
         errSecSuccess) {
-        BOOL adHoc = [(__bridge NSString *) text containsString:@"cdhash"];
+        bool adHoc = EZUpdateRequirementIsAdHoc(
+            [(__bridge NSString *) text UTF8String]);
         CFRelease(text);
 
         if (adHoc) {

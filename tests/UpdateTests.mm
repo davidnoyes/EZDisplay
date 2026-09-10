@@ -412,6 +412,42 @@ static const char *const kCapturedZipRelease = R"JSON(
 
 @end
 
+#pragma mark - Telling the two signatures apart
+
+@interface AdHocRequirementTests : XCTestCase
+@end
+
+@implementation AdHocRequirementTests
+
+- (void)testAnAdHocRequirementIsRecognized
+{
+    // Captured with `codesign -d -r-` from a Debug build, which is what every
+    // developer build of this app is signed as. It names one code hash, so no
+    // other build can ever satisfy it — which is why an update from here has
+    // to be refused with an explanation rather than as tampering.
+    XCTAssertTrue(EZUpdateRequirementIsAdHoc(
+        "cdhash H\"aab34eff91af8422589d2ff83f7569844a67db8e\""));
+}
+
+- (void)testTheCertificatesRequirementIsNotAdHoc
+{
+    // The shape a Release build signed by "EZDisplay Self Signed" carries. It
+    // names the certificate rather than a build, which is the whole reason for
+    // signing: it is stable across releases, so an update can be held to it.
+    XCTAssertFalse(EZUpdateRequirementIsAdHoc(
+        "identifier \"io.github.davidnoyes.ezdisplay\" and certificate leaf = "
+        "H\"7b8a1c4f2e9d6a3b5c8e0f1d2a4b6c8e0f1d2a4b\""));
+}
+
+- (void)testAnEmptyRequirementIsNotAdHoc
+{
+    // SecRequirementCopyString failing leaves nothing to read, and the caller
+    // carries on to the real signature check rather than refusing outright.
+    XCTAssertFalse(EZUpdateRequirementIsAdHoc(""));
+}
+
+@end
+
 #pragma mark - Whether the running copy can be replaced
 
 @interface BundleReplacementTests : XCTestCase
