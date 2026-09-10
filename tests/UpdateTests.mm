@@ -121,105 +121,96 @@ static const char *const kCapturedDmgRelease = R"JSON(
 }
 )JSON";
 
-/// The same response with this project's values in place of that one's: the
-/// repository, the tag, and an asset named the way EZDisplay's release
-/// workflow names one. Every key, and every other value, is as GitHub sent it.
+/// api.github.com/repos/davidnoyes/EZDisplay/releases/latest, verbatim,
+/// fetched 2026-09-10: the v1.0.0 release, the first this project cut.
 ///
-/// Adapted rather than captured because EZDisplay has no release yet. When it
-/// has one, this should be replaced with the real thing.
+/// This is the response the updater actually reads, from the URL it actually
+/// asks for, so it is the fixture that fails if the release workflow ever
+/// changes the shape of what it publishes.
+///
+/// It differs from the one above in three ways worth keeping, none of which a
+/// hand-written fixture would have thought to include: the asset label is an
+/// empty string rather than null, the digest is populated rather than null,
+/// and the author is a Bot whose URLs are percent-encoded.
 static const char *const kCapturedZipRelease = R"JSON(
 {
-  "url": "https://api.github.com/repos/davidnoyes/ezdisplay/releases/178383625",
-  "assets_url": "https://api.github.com/repos/davidnoyes/ezdisplay/releases/178383625/assets",
-  "upload_url": "https://uploads.github.com/repos/davidnoyes/ezdisplay/releases/178383625/assets{?name,label}",
-  "html_url": "https://github.com/davidnoyes/ezdisplay/releases/tag/v1.1.0",
-  "id": 178383625,
+  "url": "https://api.github.com/repos/davidnoyes/EZDisplay/releases/386642708",
+  "assets_url": "https://api.github.com/repos/davidnoyes/EZDisplay/releases/386642708/assets",
+  "upload_url": "https://uploads.github.com/repos/davidnoyes/EZDisplay/releases/386642708/assets{?name,label}",
+  "html_url": "https://github.com/davidnoyes/EZDisplay/releases/tag/v1.0.0",
+  "id": 386642708,
   "author": {
-    "login": "waydabber",
-    "id": 37590873,
-    "node_id": "MDQ6VXNlcjM3NTkwODcz",
-    "avatar_url": "https://avatars.githubusercontent.com/u/37590873?v=4",
+    "login": "github-actions[bot]",
+    "id": 41898282,
+    "node_id": "MDM6Qm90NDE4OTgyODI=",
+    "avatar_url": "https://avatars.githubusercontent.com/in/15368?v=4",
     "gravatar_id": "",
-    "url": "https://api.github.com/users/waydabber",
-    "html_url": "https://github.com/waydabber",
-    "followers_url": "https://api.github.com/users/waydabber/followers",
-    "following_url": "https://api.github.com/users/waydabber/following{/other_user}",
-    "gists_url": "https://api.github.com/users/waydabber/gists{/gist_id}",
-    "starred_url": "https://api.github.com/users/waydabber/starred{/owner}{/repo}",
-    "subscriptions_url": "https://api.github.com/users/waydabber/subscriptions",
-    "organizations_url": "https://api.github.com/users/waydabber/orgs",
-    "repos_url": "https://api.github.com/users/waydabber/repos",
-    "events_url": "https://api.github.com/users/waydabber/events{/privacy}",
-    "received_events_url": "https://api.github.com/users/waydabber/received_events",
-    "type": "User",
+    "url": "https://api.github.com/users/github-actions%5Bbot%5D",
+    "html_url": "https://github.com/apps/github-actions",
+    "followers_url": "https://api.github.com/users/github-actions%5Bbot%5D/followers",
+    "following_url": "https://api.github.com/users/github-actions%5Bbot%5D/following{/other_user}",
+    "gists_url": "https://api.github.com/users/github-actions%5Bbot%5D/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/github-actions%5Bbot%5D/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/github-actions%5Bbot%5D/subscriptions",
+    "organizations_url": "https://api.github.com/users/github-actions%5Bbot%5D/orgs",
+    "repos_url": "https://api.github.com/users/github-actions%5Bbot%5D/repos",
+    "events_url": "https://api.github.com/users/github-actions%5Bbot%5D/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/github-actions%5Bbot%5D/received_events",
+    "type": "Bot",
     "user_view_type": "public",
     "site_admin": false
   },
-  "node_id": "RE_kwDOBi-ezs4KoesJ",
-  "tag_name": "v1.1.0",
+  "node_id": "RE_kwDOUVqxTc4XC7MU",
+  "tag_name": "v1.0.0",
   "target_commitish": "main",
-  "name": "EZDisplay 1.1.0",
+  "name": "EZDisplay 1.0.0",
   "draft": false,
   "immutable": false,
   "prerelease": false,
-  "created_at": "2024-10-04T10:51:10Z",
-  "updated_at": "2024-10-10T15:38:59Z",
-  "published_at": "2024-10-04T10:56:14Z",
+  "created_at": "2026-09-10T21:10:55Z",
+  "updated_at": "2026-09-10T21:43:12Z",
+  "published_at": "2026-09-10T21:43:12Z",
   "assets": [
     {
-      "url": "https://api.github.com/repos/davidnoyes/ezdisplay/releases/assets/196854903",
-      "id": 196854903,
-      "node_id": "RA_kwDOBi-ezs4Lu8R3",
-      "name": "EZDisplay-1.1.0.zip",
-      "label": null,
+      "url": "https://api.github.com/repos/davidnoyes/EZDisplay/releases/assets/555879526",
+      "id": 555879526,
+      "node_id": "RA_kwDOUVqxTc4hIgxm",
+      "name": "EZDisplay-1.0.0.zip",
+      "label": "",
       "uploader": {
-        "login": "waydabber",
-        "id": 37590873,
-        "node_id": "MDQ6VXNlcjM3NTkwODcz",
-        "avatar_url": "https://avatars.githubusercontent.com/u/37590873?v=4",
+        "login": "github-actions[bot]",
+        "id": 41898282,
+        "node_id": "MDM6Qm90NDE4OTgyODI=",
+        "avatar_url": "https://avatars.githubusercontent.com/in/15368?v=4",
         "gravatar_id": "",
-        "url": "https://api.github.com/users/waydabber",
-        "html_url": "https://github.com/waydabber",
-        "followers_url": "https://api.github.com/users/waydabber/followers",
-        "following_url": "https://api.github.com/users/waydabber/following{/other_user}",
-        "gists_url": "https://api.github.com/users/waydabber/gists{/gist_id}",
-        "starred_url": "https://api.github.com/users/waydabber/starred{/owner}{/repo}",
-        "subscriptions_url": "https://api.github.com/users/waydabber/subscriptions",
-        "organizations_url": "https://api.github.com/users/waydabber/orgs",
-        "repos_url": "https://api.github.com/users/waydabber/repos",
-        "events_url": "https://api.github.com/users/waydabber/events{/privacy}",
-        "received_events_url": "https://api.github.com/users/waydabber/received_events",
-        "type": "User",
+        "url": "https://api.github.com/users/github-actions%5Bbot%5D",
+        "html_url": "https://github.com/apps/github-actions",
+        "followers_url": "https://api.github.com/users/github-actions%5Bbot%5D/followers",
+        "following_url": "https://api.github.com/users/github-actions%5Bbot%5D/following{/other_user}",
+        "gists_url": "https://api.github.com/users/github-actions%5Bbot%5D/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/github-actions%5Bbot%5D/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/github-actions%5Bbot%5D/subscriptions",
+        "organizations_url": "https://api.github.com/users/github-actions%5Bbot%5D/orgs",
+        "repos_url": "https://api.github.com/users/github-actions%5Bbot%5D/repos",
+        "events_url": "https://api.github.com/users/github-actions%5Bbot%5D/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/github-actions%5Bbot%5D/received_events",
+        "type": "Bot",
         "user_view_type": "public",
         "site_admin": false
       },
       "content_type": "application/zip",
       "state": "uploaded",
-      "size": 2416133,
-      "digest": null,
-      "download_count": 556456,
-      "created_at": "2024-10-04T10:55:57Z",
-      "updated_at": "2024-10-04T10:56:00Z",
-      "browser_download_url": "https://github.com/davidnoyes/ezdisplay/releases/download/v1.1.0/EZDisplay-1.1.0.zip"
+      "size": 501774,
+      "digest": "sha256:44a71b0587372bdd2a21546471107fc5c49428cb11194cc4dbac3573da6bb5bc",
+      "download_count": 0,
+      "created_at": "2026-09-10T21:43:11Z",
+      "updated_at": "2026-09-10T21:43:11Z",
+      "browser_download_url": "https://github.com/davidnoyes/EZDisplay/releases/download/v1.0.0/EZDisplay-1.0.0.zip"
     }
   ],
-  "tarball_url": "https://api.github.com/repos/davidnoyes/ezdisplay/tarball/v1.1.0",
-  "zipball_url": "https://api.github.com/repos/davidnoyes/ezdisplay/zipball/v1.1.0",
-  "body": "Adds an in-app updater.\r\n\r\n* Check for updates from the About box.\r\n",
-  "discussion_url": "https://github.com/davidnoyes/ezdisplay/discussions/1647",
-  "reactions": {
-    "url": "https://api.github.com/repos/davidnoyes/ezdisplay/releases/178383625/reactions",
-    "total_count": 480,
-    "+1": 209,
-    "-1": 0,
-    "laugh": 27,
-    "hooray": 59,
-    "confused": 0,
-    "heart": 117,
-    "rocket": 68,
-    "eyes": 0
-  },
-  "mentions_count": 1
+  "tarball_url": "https://api.github.com/repos/davidnoyes/EZDisplay/tarball/v1.0.0",
+  "zipball_url": "https://api.github.com/repos/davidnoyes/EZDisplay/zipball/v1.0.0",
+  "body": "## Installing\n\n1. Download `EZDisplay-1.0.0.zip`, unzip it, and move **EZDisplay.app** to your **Applications** folder.\n2. Open it. macOS refuses the first launch and offers to move it to the Trash, because this app is signed by its own certificate rather than by an Apple one — which costs $99 a year for a project with one user.\n3. Open **System Settings > Privacy & Security**, scroll to the message naming EZDisplay, and choose **Open Anyway**.\n\nThat is once per machine, not once per update. Every release is signed by the same certificate, so later versions open without asking again — and the Accessibility permission the volume keys need survives an update for the same reason.\n\nTo let EZDisplay control the volume keys, grant it Accessibility in **System Settings > Privacy & Security > Accessibility**.\n\nSHA-256: `44a71b0587372bdd2a21546471107fc5c49428cb11194cc4dbac3573da6bb5bc`\n\n\n**Full Changelog**: https://github.com/davidnoyes/EZDisplay/commits/v1.0.0"
 }
 )JSON";
 
@@ -310,10 +301,10 @@ static const char *const kCapturedZipRelease = R"JSON(
     XCTAssertTrue(EZReleaseFromJSON(kCapturedZipRelease, &release, &error),
                   @"%s", error.c_str());
 
-    XCTAssertEqual(release.version, std::string("1.1.0"));
+    XCTAssertEqual(release.version, std::string("1.0.0"));
     XCTAssertEqual(release.downloadURL,
-                   std::string("https://github.com/davidnoyes/ezdisplay/"
-                               "releases/download/v1.1.0/EZDisplay-1.1.0.zip"));
+                   std::string("https://github.com/davidnoyes/EZDisplay/"
+                               "releases/download/v1.0.0/EZDisplay-1.0.0.zip"));
 }
 
 - (void)testAReleaseWithNothingToDownloadIsRefused
