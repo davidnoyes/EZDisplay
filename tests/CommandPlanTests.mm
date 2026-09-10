@@ -85,6 +85,24 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
     XCTAssertEqual(request.helpTopic, std::string("set"));
 }
 
+- (void)testTheVersionIsAskedForInAllThreeUsualWays
+{
+    // The same three spellings help answers to. A tool that can update itself
+    // has to be able to say what it is now, and a release process that cannot
+    // be checked from a script is one nobody checks.
+    XCTAssertEqual(ParsedOK({"version"}).kind, EZCommandVersion);
+    XCTAssertEqual(ParsedOK({"--version"}).kind, EZCommandVersion);
+    XCTAssertEqual(ParsedOK({"-v"}).kind, EZCommandVersion);
+}
+
+- (void)testVersionTakesNoArguments
+{
+    // It answers one question and has nothing to qualify. Accepting a word and
+    // ignoring it would read as though the word had meant something.
+    std::string error;
+    XCTAssertTrue(ParseFails({"version", "set"}, &error));
+}
+
 - (void)testAnUnknownCommandIsNamedInTheError
 {
     std::string error;
@@ -815,7 +833,7 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
     for (const std::string &command : {"list", "modes", "set", "hdr", "mirror",
                                        "color", "restore", "custom", "prefs",
                                        "nightshift", "truetone", "brightness",
-                                       "volume", "mute", "help"})
+                                       "volume", "mute", "help", "version"})
         XCTAssertNotEqual(usage.find(command), std::string::npos,
                           @"the usage text does not mention %s", command.c_str());
 }
@@ -827,7 +845,7 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
     for (const std::string &command : {"list", "modes", "set", "hdr", "mirror",
                                        "color", "restore", "custom", "prefs",
                                        "nightshift", "truetone", "brightness",
-                                       "volume", "mute"})
+                                       "volume", "mute", "version"})
         XCTAssertNotEqual(EZUsageText(command), EZUsageText(""),
                           @"%s has no help of its own", command.c_str());
 }
@@ -850,6 +868,31 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
 - (void)testAnUnknownTopicFallsBackToTheGeneralText
 {
     XCTAssertEqual(EZUsageText("bits"), EZUsageText(""));
+}
+
+@end
+
+
+#pragma mark - The version text
+
+@interface VersionTextTests : XCTestCase
+@end
+
+@implementation VersionTextTests
+
+- (void)testTheVersionTextCarriesBothNumbers
+{
+    // Two numbers, because they answer different questions. The short version
+    // is what a release is called and what the updater compares; the build is
+    // what tells two builds of the same release apart.
+    XCTAssertEqual(EZVersionText("1.2.3", "45"), std::string("ezdisplay 1.2.3 (45)\n"));
+}
+
+- (void)testAMissingBuildLeavesOutTheParentheses
+{
+    // The build comes from the bundle, so a hand-edited Info.plist can leave it
+    // out. "ezdisplay 1.2.3 ()" would read as a build numbered nothing.
+    XCTAssertEqual(EZVersionText("1.2.3", ""), std::string("ezdisplay 1.2.3\n"));
 }
 
 @end

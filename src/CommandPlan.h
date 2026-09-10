@@ -31,6 +31,7 @@ enum EZExitCode {
 
 enum EZCommandKind {
     EZCommandHelp,
+    EZCommandVersion,
     EZCommandList,
     EZCommandModes,
     EZCommandSet,
@@ -252,6 +253,14 @@ bool EZParseCommandLine(int argc, const char *const *argv,
 /// unrecognised topic gets the general text, because a reader who mistyped a
 /// command name needs the list of real ones.
 std::string EZUsageText(const std::string &topic);
+
+/// What `ezdisplay version` prints, given the two numbers out of the bundle.
+///
+/// Takes them rather than reading them, so a test can check the wording without
+/// the answer depending on which bundle happened to be running it. `build`
+/// empty leaves the parentheses off: it comes from a plist, and one edited by
+/// hand can be missing it.
+std::string EZVersionText(const std::string &shortVersion, const std::string &build);
 
 /// A display, as far as choosing between them goes.
 ///
