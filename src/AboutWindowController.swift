@@ -249,13 +249,18 @@ class AboutWindowController: NSWindowController {
     }
 
     override func showWindow(_ sender: Any?) {
+        // Selecting About while the window is already open just brings it
+        // forward, so there is nothing to reset. Read before the call, because
+        // the call is what makes it visible.
+        let reopened = !(window?.isVisible ?? false)
+
         super.showWindow(sender)
 
         // An install is replacing the bundle underneath this window and ends by
         // restarting the app. Resetting the panel would take away the sentence
         // saying so and put back the button that started it, and the restart
         // would then arrive out of nowhere.
-        guard !installing else { return }
+        guard reopened, !installing else { return }
 
         // Cleared rather than left showing the last answer, which by the next
         // time the window opens may no longer be true. Bumping the generation

@@ -1246,6 +1246,7 @@ int RunCommandLine(int argc, char *const *argv)
             break;
 
         case EZCommandHelp:
+        case EZCommandVersion:
         case EZCommandList:
         case EZCommandMirror:
         case EZCommandPrefs:
