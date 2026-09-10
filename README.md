@@ -205,18 +205,28 @@ That check on the requirement is the part worth keeping. A runner with no
 certificate would sign the app ad-hoc, produce a build that looks perfectly
 normal, and void the Accessibility grant of everyone who installed it.
 
-The workflow reads three repository secrets:
+The workflow reads four repository secrets:
 
 | Secret | What it is |
 | --- | --- |
 | `EZDISPLAY_SIGNING_P12` | The `.p12` from `./signing create`, base64-encoded |
 | `EZDISPLAY_SIGNING_PASSWORD` | The password protecting that file |
-| `HOMEBREW_TAP_TOKEN` | A token that can write to the tap. Optional: without it the release is published and the cask is left alone |
+| `HOMEBREW_TAP_APP_ID` | The ID of a GitHub App that can write to the tap. Optional: without it the release is published and the cask is left alone |
+| `HOMEBREW_TAP_APP_PRIVATE_KEY` | That App's private key, as the `.pem` GitHub issues |
 
 ```bash
 base64 -i ~/Desktop/ezdisplay-signing.p12 | gh secret set EZDISPLAY_SIGNING_P12
 gh secret set EZDISPLAY_SIGNING_PASSWORD
+gh secret set HOMEBREW_TAP_APP_ID
+gh secret set HOMEBREW_TAP_APP_PRIVATE_KEY < ~/Downloads/tap-app.private-key.pem
 ```
+
+A GitHub App rather than a personal access token, because that is what decides
+whether the cask commit is signed. GitHub signs a commit made through its API
+only when the request is authenticated as an App, so a personal access token
+produces an unsigned commit and a tap that cannot require signatures. Create the
+App under your account, give it **Contents: read and write**, and install it on
+`davidnoyes/homebrew-tap` alone.
 
 The cask the workflow writes is [`etc/ezdisplay.rb`](etc/ezdisplay.rb) with its
 version and checksum filled in. That file is also how to create the tap by hand
