@@ -678,7 +678,7 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
         NSAlert* alert = [[NSAlert alloc] init];
         alert.window.level = NSFloatingWindowLevel;
         alert.alertStyle   = NSAlertStyleCritical;
-        alert.messageText  = [NSString stringWithFormat:@"Cannot mirror displays!\nError: %@ (%d)", DisplayErrorName(error), error];
+        alert.messageText  = [NSString stringWithFormat:@"Cannot mirror displays.\nError: %@ (%d)", DisplayErrorName(error), error];
 
         [NSApp activateIgnoringOtherApps:YES];
         [alert runModal];

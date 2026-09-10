@@ -486,7 +486,7 @@ static NSString *SwapIn(NSURL *unpacked, NSString *installed)
     std::string app = EZUpdateAppInArchive(entries);
 
     if (app.empty()) {
-        return @"The download did not contain a single application.";
+        return @"The download did not contain exactly one app.";
     }
 
     NSURL *replacement =

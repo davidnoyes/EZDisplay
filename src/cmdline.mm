@@ -871,8 +871,10 @@ static int RestoreEveryOverride()
     NSArray<NSString *> *theirs = [RestoreSettingsItem unmanagedOverrideRelativePaths];
 
     if (theirs.count > 0)
-        fprintf(stdout, "Leaving %lu override file(s) alone: EZDisplay did not create them.\n",
-                (unsigned long) theirs.count);
+        fprintf(stdout, "Leaving %lu override %s alone: EZDisplay did not create %s.\n",
+                (unsigned long) theirs.count,
+                theirs.count == 1 ? "file" : "files",
+                theirs.count == 1 ? "it" : "them");
 
     if ([RestoreSettingsItem restoreAllScriptFor: ours] == nil) {
         fprintf(stdout, "EZDisplay has not created any display overrides; nothing to restore.\n");
@@ -886,8 +888,9 @@ static int RestoreEveryOverride()
         return EZExitFailed;
     }
 
-    fprintf(stdout, "Removed the EZDisplay resolution overrides for %lu display(s).\n",
-            (unsigned long) ours.count);
+    fprintf(stdout, "Removed the EZDisplay resolution overrides for %lu %s.\n",
+            (unsigned long) ours.count,
+            ours.count == 1 ? "display" : "displays");
     return EZExitKept;
 }
 
