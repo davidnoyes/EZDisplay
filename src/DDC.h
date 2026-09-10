@@ -21,10 +21,15 @@
 //     one — IOAVServiceWriteI2C reports success once the bus takes the bytes,
 //     whatever the display then does with them.
 //
-//  Call these from the main thread. Unlike everything else in this project they
-//  are slow: an exchange carries settle delays totalling about 90 ms, and a
-//  first call for a display also has to find its service. Cached afterwards,
-//  but a caller that drives these from a slider has to coalesce.
+//  Call these from any thread. Every exchange runs on one serial queue shared
+//  by all displays, so two of them never overlap on the bus — which matters
+//  because displays on one Mac do not necessarily have independent I2C buses.
+//
+//  They are slow, and the ones that return a value are slow *and* blocking: an
+//  exchange carries settle delays totalling about 90 ms, and a first call for a
+//  display also has to find its service. Cached afterwards. Anything driven by
+//  a control the user is moving should use `setPercentCoalesced:` instead,
+//  which returns at once and never puts the bus in front of a redraw.
 //
 
 #import <Foundation/Foundation.h>
@@ -70,6 +75,22 @@ NS_ASSUME_NONNULL_BEGIN
 /// See `EZDDCWriteTookEffect`.
 + (BOOL) setPercent: (NSInteger) percent forDisplay: (CGDirectDisplayID) display;
 
+/// The same write, posted rather than performed, keeping only the latest value.
+///
+/// For anything the user is moving: a slider drag, or a key held down. Returns
+/// immediately, and `completion` runs on the main thread once a write actually
+/// goes out — which is not once per call. Calls made while the bus is busy
+/// overwrite each other, so what reaches the display is the newest value rather
+/// than every value on the way to it, and a run of calls asking for what was
+/// last written sends nothing at all.
+///
+/// `completion` is therefore called fewer times than this is, and not at all
+/// for a value already on the display. Treat it as "a write happened and here
+/// is how it went", not as a reply to one particular call.
++ (void) setPercentCoalesced: (NSInteger) percent
+                  forDisplay: (CGDirectDisplayID) display
+                  completion: (nullable void (^)(BOOL applied)) completion;
+
 /// Whether `display` answered a read of the mute code. Cached like
 /// `availableForDisplay:`, and independent of it: a monitor can implement one
 /// of the two codes and not the other.
@@ -98,6 +119,21 @@ NS_ASSUME_NONNULL_BEGIN
 /// zero here. This code's 1 and 2 are names rather than quantities, so near
 /// enough is the wrong answer.
 + (BOOL) setMuted: (BOOL) muted forDisplay: (CGDirectDisplayID) display;
+
+/// The same write, posted rather than performed, for a caller that cannot wait.
+///
+/// The blocking form is fine for a button, which is one press and one write.
+/// It is not fine on a path that runs per tick of a drag or per repeat of a
+/// held key: a write and its read-back is a third of a second, and spending
+/// that on the main thread mid-gesture stops the knob under the mouse.
+///
+/// No coalescing, unlike `setPercentCoalesced:`. Mute is two named values
+/// rather than a dial being swept, so there is no run of intermediate writes
+/// to collapse — the caller is expected to ask once. `completion` runs on the
+/// main thread with the same read-back answer the blocking form returns.
++ (void) setMuted: (BOOL) muted
+       forDisplay: (CGDirectDisplayID) display
+       completion: (nullable void (^)(BOOL applied)) completion;
 
 /// Drops every cached service and capability.
 ///

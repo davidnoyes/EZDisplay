@@ -230,6 +230,55 @@ static EZDDCReading Parse(uint8_t vcp, const std::vector<uint8_t> &reply)
 @end
 
 
+#pragma mark - What a queued write does when it finally runs
+
+/// The rule that turns a drag into a handful of writes.
+///
+/// A drag posts one queued write per tick, and they drain at the speed of the
+/// bus rather than the speed of the mouse. Each one asks this what to do with
+/// the value the mailbox holds *now*, which is the newest one — so the writes
+/// that never got their turn are skipped rather than replayed at a display
+/// several positions behind the knob.
+@interface DDCCoalescedWriteTests : XCTestCase
+@end
+
+@implementation DDCCoalescedWriteTests
+
+- (void)testAQueuedWriteTakesTheNewestValueRatherThanTheOneItWasQueuedWith
+{
+    const EZDDCPendingWrite next = EZDDCNextWrite(62, 20);
+    XCTAssertTrue(next.shouldWrite);
+    XCTAssertEqual(next.value, 62);
+}
+
+- (void)testAValueAlreadyOnTheDisplayIsNotWrittenAgain
+{
+    // What collapses the tail of a drag. Once the knob stops, every work item
+    // still queued behind the last write finds the mailbox holding what was
+    // just written, and does nothing — so a 40-tick drag ends in one write at
+    // the final position, not 40 at it.
+    XCTAssertFalse(EZDDCNextWrite(62, 62).shouldWrite);
+}
+
+- (void)testNothingPendingWritesNothing
+{
+    XCTAssertFalse(EZDDCNextWrite(EZDDCNoValue, 62).shouldWrite);
+    XCTAssertFalse(EZDDCNextWrite(EZDDCNoValue, EZDDCNoValue).shouldWrite);
+}
+
+- (void)testTheFirstWriteToADisplayHasNothingToCompareAgainst
+{
+    // Nothing written yet is not the same as "already there". A display sitting
+    // at the value asked for still has to be written to once, because the
+    // mailbox is this process's record of what it sent, not a reading.
+    const EZDDCPendingWrite next = EZDDCNextWrite(0, EZDDCNoValue);
+    XCTAssertTrue(next.shouldWrite, @"a volume of 0 is a value, not an absence");
+    XCTAssertEqual(next.value, 0);
+}
+
+@end
+
+
 #pragma mark - What the range cache is allowed to remember
 
 /// The decision `MaximumFor` applies, extracted so it can be asserted.

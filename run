@@ -1,0 +1,58 @@
+#!/bin/bash
+#
+# Builds EZDisplay and runs it, for working on it.
+#
+# `install` is for installing: it archives, exports to /Applications, and asks
+# for an administrator password. This is for the loop between one change and
+# seeing it.
+#
+# The build goes to DerivedData/ inside the project rather than the shared
+# folder under ~/Library. That folder accumulates one directory per project
+# location, named by a hash, and this project already has nine of them — so
+# "the latest build" stops being a question anyone can answer by looking, and
+# launching the wrong one looks exactly like the change not working.
+
+set -u
+
+cd "$(dirname "$0")" || exit 1
+
+APP="DerivedData/Build/Products/Debug/EZDisplay.app"
+
+# xcodebuild puts its progress on stdout and its complaints on stderr. Only the
+# second is worth keeping, and only if something goes wrong.
+if ! log=$(xcodebuild -scheme EZDisplay \
+                      -configuration Debug \
+                      -derivedDataPath DerivedData \
+                      build 2>&1 >/dev/null)
+then
+    printf 'The build failed, so the running copy was left alone.\n\n%s\n' "$log" >&2
+    exit 100
+fi
+
+# `open` activates a running instance rather than starting the new bundle, so a
+# copy left running is the difference between testing this build and testing
+# the last one.
+osascript -e 'quit app "EZDisplay"' 2>/dev/null
+
+# Quitting is not instant. Bounded, because a copy that will not go is a thing
+# to report rather than a reason to wait forever.
+for _ in $(seq 25); do
+    pgrep -x EZDisplay >/dev/null || break
+    sleep 0.2
+done
+
+if pgrep -x EZDisplay >/dev/null; then
+    echo "EZDisplay is still running and would not quit. Nothing was launched." >&2
+    exit 100
+fi
+
+# A link at the top of the project, so the newest build is also something to
+# double-click in Finder. Ignored by git along with everything else named
+# *.app.
+ln -sfn "$APP" EZDisplay.app
+
+open "$APP"
+
+echo "EZDisplay is running, built from $(git rev-parse --short HEAD 2>/dev/null || echo 'this working copy')."
+echo "A rebuild voids the Accessibility grant, so the volume keys need it"
+echo "switching off and on again in System Settings > Privacy & Security."

@@ -21,6 +21,7 @@
 #import "DisplayModes.h"
 #import "ColorMode.h"
 #import "CoreBrightness.h"
+#import "VolumeKeys.h"
 #import "EZDisplay-Swift.h"
 
 
@@ -39,6 +40,9 @@ static const uint32_t kMaxDisplays = 0x10;
 - (void) setColorMode: (ColorModeMenuItem*) sender;
 - (void) observeBrightnessChanges;
 - (void) reloadBrightnessItems;
+- (void) startVolumeKeys;
+- (void) volumeKeyEvent: (EZMediaKeyPress) press;
+- (void) moveVolumeBy: (EZMediaKey) key;
 - (void) scheduleMenuRefresh;
 - (void) settledMenuRefresh;
 - (NSMutableArray<ResMenuItem*>*) thin: (NSArray<ResMenuItem*>*) items
@@ -512,6 +516,18 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     if (!trueToneShown && [EZTrueTone available])
         [statusMenu addItem: [self trueToneItem]];
 
+    // Nothing is added to the menu here. The count is: how many displays the
+    // volume keys have to talk to, which the tap reads on every press.
+    //
+    // Zero is how the switch in Settings is honored, and it is the whole
+    // mechanism — a tap with no targets passes every key straight through, so
+    // turning the feature off needs nothing else. The same zero is what hands
+    // the keys back when the last display with speakers is unplugged.
+    //
+    // This runs on every rebuild, and a preference change causes one, which is
+    // what makes the switch take effect without the window being closed.
+    [EZVolumeKeys setTargetCount: [EZPrefs resolvedVolumeKeys] ? volumeItems.count : 0];
+
     if (statusMenu.numberOfItems > beforeGlobals)
         [statusMenu addItem: [NSMenuItem separatorItem]];
 
@@ -780,6 +796,85 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 }
 
 
+// Called at launch and again whenever the Accessibility grant changes, because
+// granting it is done in System Settings and nothing brings the app back to ask
+// a second time. Calling it again with a tap already built switches that tap
+// back on rather than building another, so the repetition costs nothing and a
+// revoked grant that comes back is picked up without a restart.
+- (void) startVolumeKeys
+{
+    __weak EZAppDelegate* weakSelf = self;
+    [EZVolumeKeys startWithHandler: ^(EZMediaKeyPress press) { [weakSelf volumeKeyEvent: press]; }];
+}
+
+
+// A volume key this app took, on the main thread, press, repeat and release
+// alike.
+//
+// Two things happen here and they are on different edges of the key, which is
+// why the whole event arrives rather than just the ones that move something.
+// The change and the panel go with the press; the click goes with the release,
+// so holding a key ratchets the bar in silence and clicks once when it comes
+// up. That is what macOS does with the keys it keeps, and matching it is the
+// difference between feedback and a burst of clicks.
+// The click goes first, and the order is the point rather than tidiness. For a
+// volume key the two never land on the same event, so it makes no difference
+// there — but mute acts and clicks on the same press, and acting on it is a
+// blocking DDC write and read-back worth a third of a second. Behind that, the
+// one key whose click has to be instant was the only one that arrived late.
+// Nothing about the click depends on the write, so there is no reason for it to
+// wait for one.
+- (void) volumeKeyEvent: (EZMediaKeyPress) press
+{
+    if (EZShouldPlayVolumeFeedback(press, VolumeHUD.feedbackSoundEnabled))
+        [VolumeHUD playFeedbackSound];
+
+    if (EZMediaKeyShouldAct(press))
+        [self moveVolumeBy: press.key];
+}
+
+
+// Every display with speakers, not one of them. There is one pair of ears and
+// the volume keys have always been a control over what reaches them, so a Mac
+// with two monitors that both answer moves both — the same thing the system
+// keys do to the one output they can see.
+//
+// The step is worked out from what the row is showing rather than from a read,
+// because a read is a bus round trip and a held key would arrive faster than
+// the answers. `apply:` writes through the coalescing path, so a held key
+// leaves the display at the value the key stopped on rather than walking it
+// through every value on the way.
+- (void) moveVolumeBy: (EZMediaKey) key
+{
+    for (VolumeSliderItem* item in volumeItems)
+    {
+        if (key == EZMediaKeyMute)
+        {
+            [item toggleMute];
+            continue;
+        }
+
+        const int now  = (int) item.shownPercent;
+        const int next = EZVolumeAfterKey(now, key);
+        if (EZVolumeRowNeedsWrite(now, next, item.shownMuted))
+            [item apply: next];
+    }
+
+    // One panel, showing the first display that answered. Two monitors moved
+    // together still have one bar between them, which is the same compromise
+    // the system keys make with one output — and if the two are at different
+    // volumes it is the wrong one for the second. Left until there are two
+    // monitors here to decide it against.
+    VolumeSliderItem* shown = volumeItems.firstObject;
+    if (!shown)
+        return;
+
+    [VolumeHUD showWithLit: EZVolumeChicletsLit((int) shown.shownPercent, shown.shownMuted)
+                        of: kEZVolumeChiclets
+                     muted: shown.shownMuted];
+}
+
+
 // A DDC read is two frames and 50 ms of settle time per display, so doing this
 // in menuWillOpen would hold the menu closed for a tenth of a second on one
 // display and longer on two. Dispatched instead, so the menu is on screen
@@ -838,6 +933,11 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     nativeInfoCache = [NSMutableDictionary new];
     pendingHDR = [NSMutableDictionary new];
 
+    // Before anything can open a window. Without this there is nowhere for a
+    // key equivalent to live, so ⌘, and ⌘W and the clipboard shortcuts all do
+    // nothing — see MainMenu.swift.
+    [EZMainMenu install];
+
     [EZPrefs registerDefaults];
     [[NSNotificationCenter defaultCenter] addObserver: self
                                              selector: @selector(prefsChanged)
@@ -860,6 +960,32 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     // the bar already has one rather than briefly clicking through to nothing.
     [self refreshStatusMenu];
     CGDisplayRegisterReconfigurationCallback(DisplayReconfigurationCallback, (__bridge void *) self);
+
+    // After the first build, so the tap already knows whether it has anything
+    // to drive before it sees a key.
+    [self startVolumeKeys];
+
+    // The Accessibility grant is given and taken away in System Settings, and
+    // this notification is the only word of it the app gets. Without it a grant
+    // given after launch would need a restart to be used, because a tap cannot
+    // be built until it is there.
+    //
+    // The menu is not rebuilt from here. Nothing in it depends on the grant any
+    // more — the item that used to offer it is now a row in the Settings window,
+    // which watches this notification itself.
+    [[NSDistributedNotificationCenter defaultCenter]
+        addObserverForName: @"com.apple.accessibility.api"
+                    object: nil
+                     queue: [NSOperationQueue mainQueue]
+                usingBlock: ^(NSNotification* note) {
+        (void) note;
+        // The trust database is written a moment after the notification, so
+        // asking now can still get the old answer.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t) (0.5 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [weakSelf startVolumeKeys];
+        });
+    }];
 
     statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength: NSSquareStatusItemLength];
     statusItem.menu = statusMenu;

@@ -9,8 +9,14 @@
 //  so the row can write on every tick of a drag. Volume goes over DDC/CI, where
 //  a write is two frames on an I2C bus and the read-back that follows it costs
 //  50 ms of settle time. Writing that on every tick would put hundreds of frames
-//  onto the bus during one drag, so the writes are coalesced and only the
-//  readout keeps up with the knob.
+//  onto the bus during one drag.
+//
+//  So this row does write on every tick, and the coalescing happens one layer
+//  down: `setPercentCoalesced:` keeps only the newest value and drops a write
+//  for a value already sent. That is MonitorControl's arrangement rather than a
+//  timer here, and the reason to prefer it is that the bus never gets in front
+//  of a redraw — the writes drain on their own queue while the knob keeps up
+//  with the mouse.
 //
 //  This dial belongs to the monitor, not to macOS. It is not the output volume
 //  in Sound settings and moving one does not move the other.
@@ -35,18 +41,24 @@ private final class TrackingSlider: NSSlider {
 @objc final class VolumeSliderItem: NSMenuItem {
     @objc let display: CGDirectDisplayID
 
-    /// How long the knob has to stand still before the value goes to the
-    /// display. Long enough that a drag across the track is a handful of writes
-    /// rather than one per pixel, short enough that letting go feels immediate.
-    private static let writeDelay: TimeInterval = 0.15
-
     private let slider = TrackingSlider()
     private let readout = NSTextField(labelWithString: "")
     private let muteButton = NSButton()
     private let hasMute: Bool
 
     private var isMuted = false
-    private var pendingPercent = -1
+
+    /// What the row is showing, which is where the volume keys step from.
+    ///
+    /// The row rather than the display, because asking the display costs a bus
+    /// round trip and a key press cannot wait for one. It is the same value the
+    /// user is looking at, and `reload()` brings it back in line whenever the
+    /// menu opens.
+    @objc private(set) var shownPercent = 0
+
+    /// And whether it is showing the display as muted, for the same reason and
+    /// with the same caveat: it is what the row last saw, not a fresh read.
+    @objc var shownMuted: Bool { isMuted }
 
     /// A row for `display`, or nil when it has no volume control to offer.
     ///
@@ -127,7 +139,7 @@ private final class TrackingSlider: NSSlider {
     /// is worth roughly a tenth of a second — call it once the menu is on
     /// screen, not while it is being built.
     @objc func reload() {
-        guard !slider.isTracking, pendingPercent < 0 else { return }
+        guard !slider.isTracking else { return }
         readAndShow()
     }
 
@@ -149,36 +161,79 @@ private final class TrackingSlider: NSSlider {
     }
 
     @objc private func moved(_ sender: NSSlider) {
-        let percent = Int(sender.doubleValue.rounded())
+        write(Int(sender.doubleValue.rounded()))
+    }
+
+    /// Moves the row and the display to `percent`, for a caller that is not the
+    /// knob: the volume keys.
+    ///
+    /// The knob moves too, which is the difference from a drag — during a drag
+    /// the mouse is already holding it where it belongs.
+    @objc func apply(_ percent: Int) {
+        slider.doubleValue = Double(percent)
+        write(percent)
+    }
+
+    /// Writes `percent`, and whatever that implies for mute.
+    ///
+    /// The two mute cases sit on opposite sides of the volume write and the
+    /// order is load-bearing rather than tidy. Unmuting goes first, so the sound
+    /// is on its way back before the louder value lands. Muting goes last,
+    /// because a display unmutes itself on a volume write — set mute first and
+    /// the zero that follows would lift it, leaving the row drawing a slash over
+    /// a display that is not muted. Both are posted onto the one serial queue
+    /// every DDC exchange uses, so posting order is bus order.
+    private func write(_ percent: Int) {
         // Shown before the write, so the readout keeps up with the knob rather
         // than trailing a bus round trip behind it.
         show(percent)
-        pendingPercent = percent
 
-        // Coalesce: every tick cancels the write the previous one scheduled, so
-        // a drag lands one write per pause rather than one per pixel.
-        //
-        // The tracking mode matters. Without it the timer would not fire until
-        // the drag ended, because NSSlider's tracking loop does not run the
-        // default mode — and the volume would jump at the end of the drag
-        // instead of following it.
-        NSObject.cancelPreviousPerformRequests(withTarget: self,
-                                               selector: #selector(writePending),
-                                               object: nil)
-        perform(#selector(writePending), with: nil,
-                afterDelay: Self.writeDelay, inModes: [.default, .eventTracking])
+        let action = EZVolumeMute.action(percent: percent,
+                                         muted: isMuted,
+                                         muteAtZero: EZPrefs.muteAtZero)
+        if action == .unmute { setMute(false) }
+
+        EZDisplayAudio.setPercentCoalesced(percent, forDisplay: display) { [weak self] applied in
+            guard let self, !applied else { return }
+            // A refused write puts the row back where the display actually is,
+            // rather than leaving the slider and the readout standing at a
+            // number nothing accepted — but not mid-drag, where it would pull
+            // the knob out from under the mouse over one failed exchange.
+            guard !self.slider.isTracking else { return }
+            self.readAndShow()
+        }
+
+        if action == .mute { setMute(true) }
     }
 
-    @objc private func writePending() {
-        let percent = pendingPercent
-        guard percent >= 0 else { return }
-        pendingPercent = -1
+    /// Moves mute alongside a volume write, at `EZVolumeMute`'s say-so.
+    ///
+    /// Shown before the write and posted rather than performed, both for the
+    /// same reasons `write(_:)` does it with the percentage. The panel is drawn
+    /// from `shownMuted` the moment the key handler returns, so a glyph that
+    /// waited on the bus would draw the state the press was meant to leave
+    /// behind; and this runs on a drag tick and on a key repeat, where a
+    /// blocking write and its read-back would stop the knob under the mouse for
+    /// a third of a second. A refused write is put right by the same
+    /// `readAndShow()` a refused volume write is.
+    ///
+    /// Setting `isMuted` here is also what stops this repeating: every tick
+    /// after the first one is asked about the state this left, so one gesture
+    /// asks for one change however long it lasts, and a display that refuses is
+    /// not asked again until something puts the row back.
+    ///
+    /// Not gated on `hasMute`. A display that never answered a mute read is
+    /// never shown as muted, so the unmute case cannot arise; and the mute case
+    /// is a write to a code that published a range, which is the rule that
+    /// matters. `EZDisplayAudio` refuses the rest.
+    private func setMute(_ muted: Bool) {
+        isMuted = muted
+        showMute()
 
-        // A refused write puts the row back where the display actually is,
-        // rather than leaving the slider and the readout standing at a number
-        // nothing accepted.
-        if !EZDisplayAudio.setPercent(percent, forDisplay: display) {
-            readAndShow()
+        EZDisplayAudio.setMuted(muted, forDisplay: display) { [weak self] applied in
+            guard let self, !applied else { return }
+            guard !self.slider.isTracking else { return }
+            self.readAndShow()
         }
     }
 
@@ -187,7 +242,11 @@ private final class TrackingSlider: NSSlider {
     /// A read here would cost an exchange to answer a question the row can
     /// already answer, and if it disagreed with what is on screen the button
     /// would do the opposite of what its icon just offered.
-    @objc private func toggleMute() {
+    ///
+    /// The mute key lands here too. It blocks for the length of a write and its
+    /// read-back, which is what the button already does, and a key that repeats
+    /// is only acted on once.
+    @objc func toggleMute() {
         let wanted = !isMuted
         if EZDisplayAudio.setMuted(wanted, forDisplay: display) {
             isMuted = wanted
@@ -198,6 +257,7 @@ private final class TrackingSlider: NSSlider {
     }
 
     private func show(_ percent: Int) {
+        shownPercent = percent
         readout.stringValue = "\(percent)%"
         slider.setAccessibilityValueDescription("\(percent) percent")
     }
