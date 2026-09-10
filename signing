@@ -104,6 +104,25 @@ identity_present() {
     security find-certificate -c "$IDENTITY" >/dev/null 2>&1
 }
 
+# Whether the private key is in the keychain beside the certificate, which is
+# what makes the pair an identity rather than just a certificate.
+#
+# Deliberately without -v, because that flag is the thing this exists to
+# second-guess: it reports nothing both when an identity is untrusted and when
+# the private key simply could not be read, and those want opposite advice.
+identity_has_key() {
+    security find-identity -p codesigning 2>/dev/null |
+        grep -qF "\"${IDENTITY}\""
+}
+
+# Whether the certificate is past its expiry date. Answered from the
+# certificate itself rather than from a keychain verdict, so it stays correct
+# in an environment where `find-identity -v` has already been shown not to be.
+cert_expired() {
+    ! security find-certificate -c "$IDENTITY" -p 2>/dev/null |
+        openssl x509 -noout -checkend 0 >/dev/null 2>&1
+}
+
 # Puts a .p12 into the login keychain and trusts it for signing code.
 #
 # Importing alone is not enough: an untrusted certificate is not a valid
@@ -308,19 +327,54 @@ cmd_show() {
     # having created one — while `run` and `install` quietly go back to ad-hoc
     # and the volume keys start needing a re-grant every build again.
     if [[ -z $print ]]; then
-        if identity_present; then
-            echo "\"${IDENTITY}\" is in the keychain but is not a valid signing"
-            echo "identity, so builds are signed ad-hoc. Either it has expired or"
-            echo "its trust setting has gone."
+        if ! identity_present; then
+            echo "\"${IDENTITY}\" is not installed. Builds are signed ad-hoc."
+            echo "To create it: ./signing create"
+            return 1
+        fi
+
+        # Expiry is the one cause this can prove, because the date is in the
+        # certificate rather than in a verdict about it.
+        if cert_expired; then
+            echo "\"${IDENTITY}\" has expired, so builds are signed ad-hoc."
             cert_dates
             echo
             echo "Replacing it costs every user an Accessibility re-grant, and there"
             echo "is no way to renew it in place. Delete it in Keychain Access, run"
             echo "./signing create, and expect that re-grant."
-        else
-            echo "\"${IDENTITY}\" is not installed. Builds are signed ad-hoc."
-            echo "To create it: ./signing create"
+            return 1
         fi
+
+        # An unexpired certificate that does not come back as a valid identity
+        # is not evidence of a broken certificate. `find-identity -v` reports
+        # exactly the same nothing when it cannot read the private key, which is
+        # what a sandboxed shell does to it — and this branch used to answer
+        # that by telling the reader to delete a certificate that was fine and
+        # mint another, at the price of an Accessibility re-grant for every
+        # user. Nothing readable here can tell the two causes apart, so say so
+        # rather than pick one.
+        echo "\"${IDENTITY}\" is in the keychain and has not expired, but it did"
+        echo "not come back as a valid signing identity, so a build now would be"
+        echo "signed ad-hoc."
+        cert_dates
+        if identity_has_key; then
+            echo "Private key: present in the keychain."
+        fi
+        echo
+        echo "Two things look exactly like this, and only one of them is a fault:"
+        echo
+        echo "  * The command could not read the private key, which is what a"
+        echo "    sandboxed or otherwise restricted shell does to it. Run"
+        echo "    ./signing show again in an ordinary terminal before believing"
+        echo "    anything above."
+        echo
+        echo "  * The trust setting is gone. If an ordinary terminal says the"
+        echo "    same thing, open the certificate in Keychain Access and set"
+        echo "    Code Signing to \"Always Trust\"."
+        echo
+        echo "Do not delete the certificate for either of them. Recreating it"
+        echo "costs every user an Accessibility re-grant, and neither cause"
+        echo "needs it."
         return 1
     fi
 
