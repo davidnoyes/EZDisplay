@@ -1,0 +1,255 @@
+name: Release
+
+# Cutting a release is a signed tag and a push, and nothing else:
+#
+#     git tag -s v1.2.3 -m "EZDisplay 1.2.3" && git push origin v1.2.3
+#
+# The tag has to match MARKETING_VERSION in the project, which is checked
+# below. That way the repository stays the one place a version is written down,
+# and a tag that disagrees with it fails before anything is built or published.
+#
+# The signing certificate is the app's identity: macOS pins the Accessibility
+# grant to it, so a release signed by anything else costs every user a re-grant.
+# It reaches this runner as two secrets, EZDISPLAY_SIGNING_P12 (the base64 of
+# the .p12 `./signing create` wrote) and EZDISPLAY_SIGNING_PASSWORD. Without
+# them the build would fall back to ad-hoc signing and look fine, so the
+# signature is checked before anything is published rather than trusted.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    # Pinned rather than macos-latest: VolumeHUD.swift uses NSGlassEffectView,
+    # which needs the macOS 26 SDK to compile even though it only runs on 26.
+    runs-on: macos-26
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check the SDK is new enough
+        run: |
+          set -euo pipefail
+
+          version=$(xcrun --sdk macosx --show-sdk-version)
+          echo "Xcode $(xcodebuild -version | head -1 | cut -d' ' -f2), macOS SDK ${version}"
+
+          if [[ ${version%%.*} -lt 26 ]]; then
+            echo "::error::The runner's macOS SDK is ${version}. NSGlassEffectView needs 26."
+            exit 1
+          fi
+
+      - name: Check the tag matches the project's version
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME#v}"
+          project=$(xcodebuild -scheme EZDisplay -configuration Release \
+                               -showBuildSettings 2>/dev/null |
+                    awk '$1 == "MARKETING_VERSION" { print $3; exit }')
+
+          echo "Tag ${tag}, project ${project}"
+
+          if [[ $tag != "$project" ]]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match MARKETING_VERSION ${project}."
+            echo "::error::Set MARKETING_VERSION in EZDisplay.xcodeproj first, then tag that commit."
+            exit 1
+          fi
+
+          echo "VERSION=${tag}" >> "$GITHUB_ENV"
+
+      - name: Import the signing certificate
+        env:
+          SIGNING_P12: ${{ secrets.EZDISPLAY_SIGNING_P12 }}
+          P12_PASSWORD: ${{ secrets.EZDISPLAY_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z ${SIGNING_P12:-} || -z ${P12_PASSWORD:-} ]]; then
+            echo "::error::EZDISPLAY_SIGNING_P12 and EZDISPLAY_SIGNING_PASSWORD are not set."
+            echo "::error::See ./signing for how to add them."
+            exit 1
+          fi
+
+          keychain="${RUNNER_TEMP}/ezdisplay-signing.keychain-db"
+          password=$(openssl rand -base64 24)
+          p12="${RUNNER_TEMP}/signing.p12"
+
+          printf '%s' "$SIGNING_P12" | base64 --decode > "$p12"
+
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+
+          # -T lets codesign use the key. No trust setting and no administrator
+          # password: `security find-identity -v` reports "0 valid identities
+          # found" for a certificate nothing trusts, but codesign signs with it
+          # anyway, and the requirement it writes is the one this project wants.
+          # So nothing here may test for a *valid* identity — that check is what
+          # would silently send the release out signed ad-hoc.
+          security import "$p12" -k "$keychain" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$p12"
+
+          # Without this the keychain prompts for permission the first time
+          # codesign touches the key, and there is nobody here to answer it.
+          security set-key-partition-list -S apple-tool:,apple: \
+                                          -s -k "$password" "$keychain" >/dev/null
+
+          # xcodebuild searches the keychain list, so being on disk is not
+          # enough. The existing list is kept, because the login keychain going
+          # missing breaks unrelated tooling on the runner.
+          security list-keychains -d user -s "$keychain" \
+              $(security list-keychains -d user | tr -d '"')
+
+          echo "KEYCHAIN=${keychain}" >> "$GITHUB_ENV"
+
+      - name: Run the tests
+        run: |
+          set -euo pipefail
+
+          xcodebuild -scheme EZDisplay \
+                     -configuration Debug \
+                     -destination "platform=macOS" \
+                     -derivedDataPath build \
+                     test
+
+      - name: Build
+        run: |
+          set -euo pipefail
+
+          # The build number is the workflow run, which rises on its own and
+          # says which run produced a given copy. The marketing version is the
+          # tag, and is the only one an update compares.
+          xcodebuild -scheme EZDisplay \
+                     -configuration Release \
+                     -derivedDataPath build \
+                     CODE_SIGN_IDENTITY="EZDisplay Self Signed" \
+                     CODE_SIGN_STYLE=Manual \
+                     CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" \
+                     OTHER_CODE_SIGN_FLAGS="--keychain ${KEYCHAIN}" \
+                     build
+
+      - name: Check what was built
+        run: |
+          set -euo pipefail
+
+          app=build/Build/Products/Release/EZDisplay.app
+
+          codesign --verify --strict --deep --verbose=2 "$app"
+
+          # An ad-hoc signature reads "cdhash H..." and changes every build. The
+          # certificate's reads "certificate leaf = H...", which is stable, and
+          # stability is the whole reason for signing this at all: it is what
+          # the Accessibility grant and the in-app updater are both pinned to.
+          requirement=$(codesign -d -r- "$app" 2>&1 |
+                        sed -n -e 's/^#* *designated => //p')
+          echo "Designated requirement: ${requirement}"
+
+          case "$requirement" in
+            *"certificate leaf"*) ;;
+            *)
+              echo "::error::This build is not signed by the certificate, so it would"
+              echo "::error::void every user's Accessibility grant. Nothing was published."
+              exit 1
+              ;;
+          esac
+
+          built=$(defaults read "$PWD/${app}/Contents/Info" CFBundleShortVersionString)
+
+          if [[ $built != "$VERSION" ]]; then
+            echo "::error::The bundle says ${built} but the tag says ${VERSION}."
+            exit 1
+          fi
+
+      - name: Package
+        run: |
+          set -euo pipefail
+
+          # ditto, because it is the only archiver on macOS that preserves a
+          # bundle's signature. A zip made any other way arrives broken.
+          ditto -c -k --keepParent \
+                build/Build/Products/Release/EZDisplay.app \
+                "EZDisplay-${VERSION}.zip"
+
+          echo "SHA256=$(shasum -a 256 "EZDisplay-${VERSION}.zip" | cut -d' ' -f1)" \
+              >> "$GITHUB_ENV"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          cat > "${RUNNER_TEMP}/notes.md" <<EOF
+          ## Installing
+
+          1. Download \`EZDisplay-${VERSION}.zip\`, unzip it, and move **EZDisplay.app** to your **Applications** folder.
+          2. Open it. macOS refuses the first launch and offers to move it to the Trash, because this app is signed by its own certificate rather than by an Apple one — which costs \$99 a year for a project with one user.
+          3. Open **System Settings > Privacy & Security**, scroll to the message naming EZDisplay, and choose **Open Anyway**.
+
+          That is once per machine, not once per update. Every release is signed by the same certificate, so later versions open without asking again — and the Accessibility permission the volume keys need survives an update for the same reason.
+
+          To let EZDisplay control the volume keys, grant it Accessibility in **System Settings > Privacy & Security > Accessibility**.
+
+          SHA-256: \`${SHA256}\`
+          EOF
+
+          gh release create "$GITHUB_REF_NAME" \
+              "EZDisplay-${VERSION}.zip" \
+              --title "EZDisplay ${VERSION}" \
+              --notes-file "${RUNNER_TEMP}/notes.md" \
+              --generate-notes \
+              --verify-tag
+
+      - name: Update the Homebrew tap
+        env:
+          # A token for the tap repository, because the one this workflow gets
+          # can only write to this one. A fine-grained personal access token
+          # with Contents: read and write on davidnoyes/homebrew-tap is enough.
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          tap=davidnoyes/homebrew-tap
+          path=Casks/ezdisplay.rb
+
+          # The tap is optional. A release is still a release without it, so a
+          # missing token is a note rather than a failure — and by this point
+          # the release is already published, so failing here would say the
+          # release failed when it did not.
+          if [[ -z ${GH_TOKEN:-} ]]; then
+            echo "::notice::HOMEBREW_TAP_TOKEN is not set, so ${tap} was left alone."
+            exit 0
+          fi
+
+          cask=$(sed -e "s/@VERSION@/${VERSION}/" -e "s/@SHA256@/${SHA256}/" \
+                     etc/ezdisplay.rb | base64 | tr -d '\n')
+
+          # Absent the first time, and the API rejects an update that does not
+          # say which version of the file it is replacing.
+          sha=$(gh api "repos/${tap}/contents/${path}" --jq .sha 2>/dev/null || true)
+
+          # Written through the API rather than by cloning and pushing, so the
+          # commit is signed: GitHub signs what it commits on your behalf, and
+          # a runner has no key of its own to sign with.
+          gh api --method PUT "repos/${tap}/contents/${path}" \
+              -f message="ezdisplay ${VERSION}" \
+              -f content="$cask" \
+              ${sha:+-f sha="$sha"} \
+              --jq .commit.html_url
+
+      - name: Remove the certificate
+        if: always()
+        run: |
+          if [[ -n ${KEYCHAIN:-} && -f $KEYCHAIN ]]; then
+            security delete-keychain "$KEYCHAIN"
+          fi
