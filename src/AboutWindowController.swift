@@ -78,6 +78,13 @@ class AboutWindowController: NSWindowController {
         statusLabel.lineBreakMode = .byWordWrapping
         statusLabel.maximumNumberOfLines = 3
         statusLabel.preferredMaxLayoutWidth = 340
+        // Two lines' worth of room whether or not there is anything to say, so
+        // the ordinary answers appear without the window changing size under
+        // the pointer. Only a long failure message needs more, and resizeToFit
+        // gives it more.
+        let lineHeight = statusLabel.font?.boundingRectForFont.height ?? 16
+        statusLabel.heightAnchor.constraint(
+            greaterThanOrEqualToConstant: ceil(lineHeight * 2)).isActive = true
         // The check writes here, so a reader that is not looking at the window
         // when the answer arrives is still told.
         statusLabel.setAccessibilityRole(.staticText)
@@ -118,6 +125,23 @@ class AboutWindowController: NSWindowController {
         return stack
     }
 
+    /// Fits the window to its content, keeping the title bar where it is.
+    ///
+    /// The status is the one thing in here whose height is not known when the
+    /// window is built, so the size has to follow it. Without this a long
+    /// failure message has nowhere to go and is simply not shown.
+    private func resizeToFit() {
+        guard let window, let content = window.contentView else { return }
+        let fitting = content.fittingSize
+        guard fitting != content.frame.size else { return }
+
+        // A window grows from its bottom-left corner, which would walk the
+        // title bar up the screen each time the status got taller.
+        let topLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
+        window.setContentSize(fitting)
+        window.setFrameTopLeftPoint(topLeft)
+    }
+
     // MARK: - Checking
 
     @objc private func checkForUpdates() {
@@ -125,6 +149,7 @@ class AboutWindowController: NSWindowController {
         spinner.startAnimation(nil)
         statusLabel.stringValue = "Checking…"
         offered = nil
+        resizeToFit()
 
         EZUpdater.check { [weak self] check in
             guard let self else { return }
@@ -133,6 +158,7 @@ class AboutWindowController: NSWindowController {
             self.checkButton.isEnabled = true
             self.statusLabel.stringValue = check.status
             self.offered = check.updateAvailable ? check : nil
+            self.resizeToFit()
 
             // Announced as well as shown, because the answer arrives long after
             // the click that asked for it and nothing else moves on screen.
@@ -149,5 +175,6 @@ class AboutWindowController: NSWindowController {
         // time the window opens may no longer be true.
         statusLabel.stringValue = ""
         offered = nil
+        resizeToFit()
     }
 }
