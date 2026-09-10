@@ -35,7 +35,7 @@ enum EZSettingsPane {
 
     /// The panes to build, given what this Mac can do.
     ///
-    /// Night Shift is dropped rather than shown empty or greyed out, the way
+    /// Night Shift is dropped rather than shown empty or grayed out, the way
     /// the status menu drops its item: a tab that opens on nothing says the
     /// feature is there and broken. Every other pane is unconditional, so this
     /// takes the one flag rather than a set of them.

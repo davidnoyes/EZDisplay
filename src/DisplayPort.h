@@ -8,7 +8,7 @@
 //  This is how a *monitor* is told from a model of monitor. Two of the same
 //  display report the same vendor, product, and often the same serial, so
 //  nothing in what they say about themselves separates them; the port they are
-//  plugged into does. Colour mode reached that conclusion first and DDC needs
+//  plugged into does. Color mode reached that conclusion first and DDC needs
 //  the same answer, so the two share this rather than each parsing the registry
 //  their own way.
 //

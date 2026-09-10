@@ -250,14 +250,14 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
 
 - (void)testRestoreRefusesToBeToldBothHowMuchToUndo
 {
-    // Resolving this in --all's favour would remove the overrides for every
+    // Resolving this in --all's favor would remove the overrides for every
     // display when the caller named one, which is not a mistake to make
     // silently.
     std::string error;
     XCTAssertTrue(ParseFails({"restore", "--all", "--display", "1"}, &error));
 }
 
-- (void)testForceIsRecognisedWhereverItAppears
+- (void)testForceIsRecognizedWhereverItAppears
 {
     XCTAssertTrue(ParsedOK({"set", "--force", "--width", "1920"}).force);
     XCTAssertTrue(ParsedOK({"hdr", "on", "-f"}).force);
@@ -649,7 +649,7 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
 {
     // The opposite of Night Shift and True Tone. DisplayServices takes a display
     // ID for every call, so a selector is the whole point rather than something
-    // the command cannot honour.
+    // the command cannot honor.
     EZCommandRequest request = ParsedOK({"brightness", "40", "--display", "2"});
     XCTAssertTrue(request.display.given);
     XCTAssertTrue(request.display.byIndex);
@@ -929,7 +929,7 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
 {
     // The two halves are used together — a value set from the command line is
     // read back by the same command's listing — so a percentage that comes back
-    // as its neighbour would report a value nobody set. Truncating instead of
+    // as its neighbor would report a value nobody set. Truncating instead of
     // rounding does exactly that: 0.07f * 100 is 6.999999 in float.
     for (int percent = 0; percent <= 100; percent++)
         XCTAssertEqual(EZPercentFromFraction(EZFractionFromPercent(percent)), percent,

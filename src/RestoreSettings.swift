@@ -6,7 +6,7 @@
 //  There are two undos. A display's own menu item restores just that display:
 //  put back the backup taken before the app first touched the file, then remove
 //  the override. "Restore all" sweeps every override the app owns — including
-//  displays that are not plugged in right now — in a single authorised batch.
+//  displays that are not plugged in right now — in a single authorized batch.
 //
 //  Both run as shell scripts under `do shell script`, because the override
 //  directory is not writable by the user.
@@ -130,7 +130,7 @@ import Cocoa
     /// The shell commands that delete the override files in `relativePaths`, or
     /// nil when there is nothing to undo. Building the script is kept separate
     /// from running it so it can be inspected without administrator
-    /// authorisation. Pass only paths from `managedOverrideRelativePaths()`.
+    /// authorization. Pass only paths from `managedOverrideRelativePaths()`.
     @objc static func restoreAllScript(for relativePaths: [String]) -> String? {
         let fm = FileManager.default
         let removals = relativePaths.compactMap { relativePath -> String? in
@@ -144,7 +144,7 @@ import Cocoa
 
     /// Undoes the display overrides for every display this app has touched,
     /// including ones that are not currently connected, in a single
-    /// administrator-authorised batch. Returns an AppleScript error dictionary,
+    /// administrator-authorized batch. Returns an AppleScript error dictionary,
     /// or nil when the restore succeeded or there was nothing to do.
     @objc static func restoreAllSettings() -> NSDictionary? {
         guard let script = restoreAllScript(for: managedOverrideRelativePaths()) else { return nil }

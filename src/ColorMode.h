@@ -3,11 +3,11 @@
 //  EZDisplay
 //
 //  Plain Objective-C bridge over the private IOAVVideoInterface stack, so Swift
-//  (the Preferences window) can read a display's colour mode — bit depth, pixel
+//  (the Preferences window) can read a display's color mode — bit depth, pixel
 //  encoding, signal range, transfer function and colorimetry — and the list the
 //  display reports as valid at its current timing.
 //
-//  Reading is most of it; the two writes are the HDR toggle and the colour-mode
+//  Reading is most of it; the two writes are the HDR toggle and the color-mode
 //  apply at the bottom. The whole subsystem is private and unversioned, so every
 //  entry point degrades to nil/empty/NO when the symbols or the display are not
 //  there.
@@ -19,13 +19,13 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @interface EZColorMode : NSObject
-@property (readonly) int      elementID;      // IOAV colour element ID
+@property (readonly) int      elementID;      // IOAV color element ID
 @property (readonly) int      bitDepth;       // 8, 10 …
 @property (readonly) uint32_t pixelEncoding;  // RGB 4:4:4, YCbCr 4:2:2 …
 @property (readonly) uint32_t dynamicRange;   // signal range: 0 Full, 1 Limited
 @property (readonly) uint32_t eotf;           // transfer function: 0 SDR gamma, PQ, HLG …
 @property (readonly) uint32_t colorimetry;    // BT.709, BT.2020 …
-@property (readonly) BOOL     isCurrent;      // the link's active colour mode
+@property (readonly) BOOL     isCurrent;      // the link's active color mode
 // A PQ or HLG transfer function. Says only that this is one of the HDR modes,
 // not that HDR will look right in it.
 @property (readonly) BOOL     isHDR;
@@ -45,9 +45,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (readonly, copy) NSString *colorimetryName;
 @end
 
-// The state a display was in before EZDisplay changed its colour mode, so the
+// The state a display was in before EZDisplay changed its color mode, so the
 // change can be undone through the identical call that made it: the link's
-// colour bytes, and macOS's HDR mode, since applying a colour mode moves that
+// color bytes, and macOS's HDR mode, since applying a color mode moves that
 // too and half an undo is worse than none. Opaque on purpose — what it holds is
 // private-API bytes, and the only useful thing to do with one is hand it back to
 // +restore:.
@@ -61,7 +61,7 @@ NS_ASSUME_NONNULL_BEGIN
 //   Applied     the link is on the mode asked for, whether or not it had to move
 //   Superseded  that mode is not valid at the timing now in force, so nothing
 //               was attempted — the timing moved and macOS has already picked a
-//               colour element to suit it, which it is entitled to do
+//               color element to suit it, which it is entitled to do
 //   Failed      it should have worked and did not
 //
 // Collapsing the last two loses the thing a caller most needs to know on the
@@ -74,7 +74,7 @@ typedef NS_ENUM(NSInteger, EZColorModeChangeResult) {
 };
 
 @interface EZColorModes : NSObject
-// The colour mode the display link is actually running. nil when the private
+// The color mode the display link is actually running. nil when the private
 // API is unavailable or the display cannot be matched to an AV interface.
 + (nullable EZColorMode *)currentForDisplay:(CGDirectDisplayID)display;
 // Every mode valid at the display's *current* timing, derived ones included.
@@ -89,7 +89,7 @@ typedef NS_ENUM(NSInteger, EZColorModeChangeResult) {
 + (NSArray<EZColorMode *> *)supportedForDisplay:(CGDirectDisplayID)display;
 // The product name the display reports over the wire — "PHL 34M2C8600".
 //
-// Not a colour mode, and here only because this is the file that knows how to
+// Not a color mode, and here only because this is the file that knows how to
 // match a CGDirectDisplayID to an AV interface. Worth having because it is the
 // one name source that does not go through NSScreen: AppKit represents a
 // mirrored set as a single screen, so the mirrored display has no NSScreen to
@@ -104,7 +104,7 @@ typedef NS_ENUM(NSInteger, EZColorModeChangeResult) {
 // when a display ID can come to mean a different monitor.
 //
 // The lists are cached because reading one costs 358 ms — measured — against
-// 7 ms for the rest of a colour-mode read, and the Color Mode submenu would pay
+// 7 ms for the rest of a color-mode read, and the Color Mode submenu would pay
 // it on every open. What a display advertises does not change under it; which
 // timing is in force does, and that is read fresh every time.
 + (void)invalidateCaches;
@@ -115,10 +115,10 @@ typedef NS_ENUM(NSInteger, EZColorModeChangeResult) {
 // It usually does not. The DCP exposes a proxy per stream, so a single display
 // can present several interfaces carrying byte-identical product attributes.
 // Treating that as two monitors reports nothing for a perfectly ordinary
-// display, taking the product name and colour mode down together. The count of
+// display, taking the product name and color mode down together. The count of
 // *displays* CoreGraphics reports for the product is what settles it.
 //
-// Deliberately not private: this is the judgement the colour-mode and HDR
+// Deliberately not private: this is the judgment the color-mode and HDR
 // features hang off, and the private-API path around it cannot be exercised by
 // a test.
 + (BOOL)matchIsAmbiguousWithInterfaces:(NSUInteger)matchingInterfaces
@@ -127,12 +127,12 @@ typedef NS_ENUM(NSInteger, EZColorModeChangeResult) {
 // Which of the matched AV interfaces to read from, given one liveness flag per
 // interface in the order the IOKit iterator yielded them.
 //
-// Recognising that several proxies are one monitor is only half of it, because
+// Recognizing that several proxies are one monitor is only half of it, because
 // they are not interchangeable. Both of the test display's carry the same
-// product attributes and the same colour and timing elements, but only one is
+// product attributes and the same color and timing elements, but only one is
 // attached to the live link; the other answers GetLinkData with
 // kIOReturnNoDevice. Taking the first is a coin toss, and on that display it
-// lands on the dead one — which reads as the display having no colour mode at
+// lands on the dead one — which reads as the display having no color mode at
 // all, while everything built from the element dictionaries carries on working
 // and hides the fault.
 //
@@ -147,14 +147,14 @@ typedef NS_ENUM(NSInteger, EZColorModeChangeResult) {
 //
 // Product attributes identify a model, not a monitor, so two of the same
 // display cannot be told apart by them — which is why the ambiguous case used
-// to report no colour mode for either of them. The registry knows better: each
+// to report no color mode for either of them. The registry knows better: each
 // display hangs off a numbered port, the AV proxies for that port carry the
 // same node in their own path, and two identical monitors are necessarily on
 // two different ports.
 //
 // So the port wins outright wherever it is known, over both the product match
 // and liveness — a live interface on another port is another monitor's, and
-// choosing it would report its colour mode as this display's. Liveness only
+// choosing it would report its color mode as this display's. Liveness only
 // orders the candidates within the right port.
 //
 // Where no interface carries the port — CoreDisplay would not say, or the
@@ -180,18 +180,18 @@ typedef NS_ENUM(NSInteger, EZColorModeChangeResult) {
 // back off it.
 //
 // Deliberately not private, for the same reason as the two above: this is a
-// judgement worth testing, and the private-API path around it is not.
+// judgment worth testing, and the private-API path around it is not.
 + (BOOL)shouldOfferMode:(BOOL)modeIsHDR
            hdrAvailable:(BOOL)hdrAvailable
               isCurrent:(BOOL)isCurrent;
 
-// Whether applying a colour mode has to move macOS's HDR mode first.
+// Whether applying a color mode has to move macOS's HDR mode first.
 //
-// It does whenever the two disagree. A colour mode carries a transfer function,
+// It does whenever the two disagree. A color mode carries a transfer function,
 // and the transfer function is not the wire format's to choose: it belongs to
 // the HDR mode, which is what the compositor renders. Applying a PQ mode with
 // HDR off leaves the cable declaring PQ while the compositor emits plain gamma,
-// and the display decodes one as the other — the wrong colours this coupling
+// and the display decodes one as the other — the wrong colors this coupling
 // exists to prevent.
 //
 // Not when HDR is unavailable, and that is the case worth stating separately:
@@ -207,7 +207,7 @@ typedef NS_ENUM(NSInteger, EZColorModeChangeResult) {
 + (BOOL)supportsHDRForDisplay:(CGDirectDisplayID)display;
 + (BOOL)isHDREnabledForDisplay:(CGDirectDisplayID)display;
 // Turns HDR on or off. The only write in this file, and the only one the
-// colour-mode subsystem needs: the system picks the colour element itself, so
+// color-mode subsystem needs: the system picks the color element itself, so
 // on the test display turning HDR off moves the link from element 113 (PQ,
 // BT.2020) to 107 (SDR gamma, Default RGB), and turning it on moves it back.
 //
@@ -218,7 +218,7 @@ typedef NS_ENUM(NSInteger, EZColorModeChangeResult) {
 // which is what makes it safe to route through SafeApply.
 + (BOOL)setHDREnabled:(BOOL)enabled forDisplay:(CGDirectDisplayID)display;
 
-// Switches the display to the colour mode with `elementID`, by restarting the
+// Switches the display to the color mode with `elementID`, by restarting the
 // display link on it. The display blanks for a moment and comes back on the new
 // mode, exactly as it does for a resolution change.
 //

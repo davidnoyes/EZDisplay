@@ -2,7 +2,7 @@
 //  ColorModeUI.swift
 //  EZDisplay
 //
-//  How a colour mode is presented, and how one gets applied — in one place,
+//  How a color mode is presented, and how one gets applied — in one place,
 //  because it is now presented twice. Preferences lists the modes in a table and
 //  the status menu lists them in a submenu, and the two have to agree: the same
 //  rows, in the same order, with the same badges meaning the same things. Two
@@ -17,8 +17,8 @@ import AppKit
 
 // MARK: - Badge
 
-/// A capsule holding one property of a colour mode. Tinted rather than plain,
-/// because the point of the list is comparison and colour is what lets a row be
+/// A capsule holding one property of a color mode. Tinted rather than plain,
+/// because the point of the list is comparison and color is what lets a row be
 /// read at a glance instead of word by word.
 final class ColorBadge: NSView {
     private let tint: NSColor
@@ -64,7 +64,7 @@ final class ColorBadge: NSView {
 
 // MARK: - Menu item
 
-/// A menu item standing for one colour mode, carrying the mode and the display
+/// A menu item standing for one color mode, carrying the mode and the display
 /// it belongs to so the action does not have to work either out again. Same
 /// shape as ResMenuItem, for the same reason: the menu is rebuilt on every open
 /// and an item has to be self-contained.
@@ -140,8 +140,8 @@ private final class ColorModeMenuLoader: NSObject, NSMenuDelegate {
 ///
 /// The highlight is deliberately the unemphasized selection material rather than
 /// the accent fill a plain menu item uses. An accent fill would leave every
-/// badge tint sitting on saturated blue, so the row would have to recolour
-/// itself on hover to stay legible; the grey keeps all six badges reading the
+/// badge tint sitting on saturated blue, so the row would have to recolor
+/// itself on hover to stay legible; the gray keeps all six badges reading the
 /// same as they do in Preferences, which is the whole point of sharing them.
 private final class ColorModeMenuRow: NSView {
     private let highlight = NSVisualEffectView()
@@ -370,7 +370,7 @@ private final class ColorModeMenuRow: NSView {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                             onSettle?()
                             // Superseded is silent on purpose: the timing moved
-                            // and macOS picked a colour element for it, which is
+                            // and macOS picked a color element for it, which is
                             // the right outcome and not EZDisplay's to undo.
                             // Failed is the opposite — the panel has just told
                             // the user it was putting things back, and it did
@@ -396,7 +396,7 @@ private final class ColorModeMenuRow: NSView {
         }
     }
 
-    /// Both colour-mode faults report the same way: a sheet on the window that
+    /// Both color-mode faults report the same way: a sheet on the window that
     /// asked, or a modal when there is none. Neither is a state the user can be
     /// left to infer — one is a click that did nothing, the other is a display
     /// left somewhere they did not put it.
@@ -448,7 +448,7 @@ private final class ColorModeMenuRow: NSView {
     /// out in green and SDR stays neutral rather than being marked down.
     ///
     /// Derived from Apple's own enum names rather than the raw numbers, which
-    /// are private and unversioned. An unrecognised name still shows, in
+    /// are private and unversioned. An unrecognized name still shows, in
     /// neutral — better a badge reading something unexpected than a row that
     /// silently drops a property.
     private static func badges(for mode: EZColorMode) -> [NSView] {
@@ -479,7 +479,7 @@ private final class ColorModeMenuRow: NSView {
             // Three cases, not two. The name comes from a private enum-to-string
             // helper that falls back to a bare number, and a tooltip that says
             // what a mode *does* must not say it about a value it did not
-            // recognise. Anything unmatched gets the neutral sentence.
+            // recognize. Anything unmatched gets the neutral sentence.
             let help: String
             if isRGB {
                 help = "Every pixel carries its own full color. Best for text and fine detail."
@@ -495,7 +495,7 @@ private final class ColorModeMenuRow: NSView {
         }
         if parts.count > 1 {
             // "4:2:2 (DP tunneling)" -> "4:2:2". The parenthetical is how the
-            // signal is carried, not what the colour is, and spelling it out
+            // signal is carried, not what the color is, and spelling it out
             // made this the one badge wide enough to push the row past the
             // column. It survives in the tooltip.
             let raw = parts[1]
@@ -589,7 +589,7 @@ private final class ColorModeMenuRow: NSView {
     /// answers "which HDR mode is best" before it answers "which mode is
     /// sharpest". The badges still say what each row gives up.
     ///
-    /// A value the name-matching does not recognise sorts to the bottom of its
+    /// A value the name-matching does not recognize sorts to the bottom of its
     /// own field rather than the top, for the same reason the badges stay
     /// neutral on one: an unknown is not a promise of quality.
     private static func qualityRank(_ mode: EZColorMode) -> (Int, Int, Int, Int, Int, Int) {
@@ -616,7 +616,7 @@ private final class ColorModeMenuRow: NSView {
         let transfer: Int
         if eotf.contains("2084") || eotf.contains("PQ") { transfer = 0 }
         else if eotf.contains("HLG") { transfer = 1 }
-        // SDR is a recognised answer and an unrecognised one is not, so they get
+        // SDR is a recognized answer and an unrecognized one is not, so they get
         // separate buckets even though both sort below HDR. Sharing a bucket
         // would put an unknown transfer function level with plain SDR, which is
         // a claim about it that the name-matching has not earned.

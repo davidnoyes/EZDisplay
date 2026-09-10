@@ -154,7 +154,7 @@ static void ReadModes(CGDirectDisplayID display,
 /// The change has already been applied when this is called: what is being
 /// confirmed is a display the user can look at, which is the whole point of
 /// applying first and asking after. Everything that is not a deliberate yes
-/// reverts — the timeout, end of input, an unrecognised answer, Ctrl-C, and the
+/// reverts — the timeout, end of input, an unrecognized answer, Ctrl-C, and the
 /// terminal going away — because a user who cannot read the screen cannot type
 /// an answer either, and waiting has to be the thing that undoes it.
 ///
@@ -816,7 +816,7 @@ static int ListColorModes(CGDirectDisplayID display, const EZCommandRequest &req
     }
 
     if (modes.count == 0) {
-        fprintf(stderr, "This display reports no colour modes.\n");
+        fprintf(stderr, "This display reports no color modes.\n");
         return EZExitFailed;
     }
 
@@ -832,7 +832,7 @@ static int SetColorMode(CGDirectDisplayID display, const EZCommandRequest &reque
     // nothing needed doing, not that the command failed.
     EZColorMode *inUse = [EZColorModes currentForDisplay: display];
     if (inUse && inUse.elementID == request.elementID) {
-        fprintf(stdout, "Already colour mode %d: %s\n",
+        fprintf(stdout, "Already color mode %d: %s\n",
                 request.elementID, inUse.label.UTF8String);
         return EZExitKept;
     }
@@ -840,7 +840,7 @@ static int SetColorMode(CGDirectDisplayID display, const EZCommandRequest &reque
     EZColorModeRestorePoint *point = [EZColorModes applyElementID: request.elementID
                                                         toDisplay: display];
     if (point == nil) {
-        fprintf(stderr, "Element %d is not a colour mode this display offers at its current "
+        fprintf(stderr, "Element %d is not a color mode this display offers at its current "
                         "timing, or it describes the mode already in force. "
                         "Try: ezdisplay color list\n",
                 request.elementID);
@@ -850,12 +850,12 @@ static int SetColorMode(CGDirectDisplayID display, const EZCommandRequest &reque
     EZColorMode *applied = [EZColorModes currentForDisplay: display];
 
     char detail[256];
-    snprintf(detail, sizeof(detail), "Colour mode %d: %s", request.elementID,
+    snprintf(detail, sizeof(detail), "Color mode %d: %s", request.elementID,
              applied ? applied.label.UTF8String : "applied");
 
     return ConfirmOrRevert(request, detail, ^{
         if ([EZColorModes restore: point] == EZColorModeChangeFailed)
-            fprintf(stderr, "The display is still on the colour mode EZDisplay applied.\n");
+            fprintf(stderr, "The display is still on the color mode EZDisplay applied.\n");
     });
 }
 
@@ -871,8 +871,10 @@ static int RestoreEveryOverride()
     NSArray<NSString *> *theirs = [RestoreSettingsItem unmanagedOverrideRelativePaths];
 
     if (theirs.count > 0)
-        fprintf(stdout, "Leaving %lu override file(s) alone: EZDisplay did not create them.\n",
-                (unsigned long) theirs.count);
+        fprintf(stdout, "Leaving %lu override %s alone: EZDisplay did not create %s.\n",
+                (unsigned long) theirs.count,
+                theirs.count == 1 ? "file" : "files",
+                theirs.count == 1 ? "it" : "them");
 
     if ([RestoreSettingsItem restoreAllScriptFor: ours] == nil) {
         fprintf(stdout, "EZDisplay has not created any display overrides; nothing to restore.\n");
@@ -886,8 +888,9 @@ static int RestoreEveryOverride()
         return EZExitFailed;
     }
 
-    fprintf(stdout, "Removed the EZDisplay resolution overrides for %lu display(s).\n",
-            (unsigned long) ours.count);
+    fprintf(stdout, "Removed the EZDisplay resolution overrides for %lu %s.\n",
+            (unsigned long) ours.count,
+            ours.count == 1 ? "display" : "displays");
     return EZExitKept;
 }
 

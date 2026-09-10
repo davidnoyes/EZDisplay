@@ -80,7 +80,7 @@ private final class SafeApplyPanel: NSPanel {
     /// link does not return until the picture has gone and come back, and doing
     /// that inline freezes the countdown panel exactly while the screen is
     /// unreadable and the panel is the only way out. On a shared serial queue,
-    /// because a resolution change and a colour-mode change landing on the same
+    /// because a resolution change and a color-mode change landing on the same
     /// hardware at the same instant is not a case anyone has reasoned about.
     @objc static func onApplyQueue(_ block: @escaping () -> Void) {
         applyQueue.async(execute: block)
@@ -298,7 +298,7 @@ private final class SafeApplyPanel: NSPanel {
             buttonRow.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -panelInset),
         ])
 
-        // No title bar. An alert does not have one, and an empty grey strip
+        // No title bar. An alert does not have one, and an empty gray strip
         // above the icon was most of what made this read as a stray window
         // rather than a prompt. The panel stays draggable by its background,
         // and Escape still reverts, so nothing is lost with the close button.

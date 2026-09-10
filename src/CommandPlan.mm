@@ -96,7 +96,7 @@ bool CommandAllowsOption(EZCommandKind kind, const std::string &name)
 
 
 /// The long spelling of an option, so the rest of the parser and every error
-/// message deals in one name. An unrecognised spelling comes back as itself,
+/// message deals in one name. An unrecognized spelling comes back as itself,
 /// which is what the "unknown option" message needs to print.
 std::string LongName(const std::string &option)
 {
@@ -689,7 +689,7 @@ bool EZParseCommandLine(int argc, const char *const *argv,
                 return fail("restore takes options, not \"" + positionals[0] + "\"");
             if (!request->everyDisplay && !request->display.given)
                 return fail("restore needs --display or --all");
-            // Refused rather than resolved in --all's favour: the two ask for
+            // Refused rather than resolved in --all's favor: the two ask for
             // different things, and guessing wrong here removes overrides for
             // displays the caller named one of.
             if (request->everyDisplay && request->display.given)
@@ -879,8 +879,8 @@ std::string EZUsageText(const std::string &topic)
          "Usage: ezdisplay color list [--display <selector>] [--json]\n"
          "       ezdisplay color set <element ID> [--display <selector>] [--force]\n"
          "\n"
-         "Lists the colour modes valid at the display's current timing, or applies one\n"
-         "by the element ID the listing prints. A colour mode lasts until the timing\n"
+         "Lists the color modes valid at the display's current timing, or applies one\n"
+         "by the element ID the listing prints. A color mode lasts until the timing\n"
          "changes, the display is disconnected, or the machine restarts.\n"},
 
         {"restore",
@@ -950,7 +950,7 @@ std::string EZUsageText(const std::string &topic)
         "  brightness Show or set a display's brightness, 0 to 100\n"
         "  volume     Show or set a monitor's own speaker volume, 0 to 100\n"
         "  mute       Show, or turn on or off, a monitor's own mute\n"
-        "  color      List or apply the display's colour modes\n"
+        "  color      List or apply the display's color modes\n"
         "  restore    Remove the display overrides EZDisplay created\n"
         "  custom     List, add, or remove a custom resolution\n"
         "  prefs      Show or change the app's settings\n"

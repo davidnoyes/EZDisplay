@@ -25,7 +25,7 @@ import Foundation
     // Provenance markers. The override directory is shared with other tools, so
     // teardown has to know which files are EZDisplay's before deleting anything. These
     // are reverse-DNS namespaced to avoid colliding with Apple's keys, and macOS
-    // ignores keys it does not recognise.
+    // ignores keys it does not recognize.
     static let kManagedKey     = "io.github.davidnoyes.ezdisplay.managed"
     static let kCreatedFileKey = "io.github.davidnoyes.ezdisplay.created-file"
 
