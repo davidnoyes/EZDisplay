@@ -30,8 +30,17 @@ cask "ezdisplay" do
     strategy :github_latest
   end
 
-  # EZDisplay updates itself from its About panel, so Homebrew is told not to
-  # race it. `brew upgrade --greedy` still takes a newer cask when there is one.
+  # EZDisplay updates itself from its About panel. This records that, but it no
+  # longer keeps `brew upgrade` away: since Homebrew 6.0 an auto-updating cask
+  # is upgraded whenever the tap is newer than the version Homebrew reads out of
+  # the installed bundle. Measured against 6.0.22, plain `brew upgrade` takes
+  # EZDisplay, and no `--greedy` is needed.
+  #
+  # Reading the bundle rather than its own receipt is what makes that safe, and
+  # it is the reason to keep this stanza: after the app has updated itself,
+  # Homebrew sees the new version on disk and leaves it alone instead of
+  # reinstalling over the top. Anyone who wants Homebrew to keep away entirely
+  # sets HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1.
   auto_updates true
 
   depends_on macos: :big_sur
