@@ -71,6 +71,7 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     NSStatusItem *statusItem;
     NSWindowController *editResolutionsController;
     NSWindowController *preferencesController;
+    NSWindowController *aboutController;
 
     // Display ID -> its native width, height and refresh rate. Working these
     // out costs an IOKit round trip, so they are kept rather than re-derived on
@@ -93,13 +94,15 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     NSMutableArray<VolumeSliderItem *> *volumeItems;
 }
 
-// An agent app is not the active one when its menu is clicked, and a panel put
-// up by an inactive app opens behind whatever is in front. Activating first is
-// what puts it where the user is looking.
+// An agent app is not the active one when its menu is clicked, and a window put
+// up by an inactive app opens behind whatever is in front. The activate call is
+// what brings it forward, the same way Settings does it.
 - (void) showAbout
 {
+    if (!aboutController)
+        aboutController = [[AboutWindowController alloc] init];
+    [aboutController showWindow: self];
     [NSApp activateIgnoringOtherApps: YES];
-    [NSApp orderFrontStandardAboutPanel: self];
 }
 
 

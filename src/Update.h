@@ -13,6 +13,15 @@
 
 #pragma once
 
+#import <Foundation/Foundation.h>
+
+// The decisions are C++ and the facade below is Objective-C, and this header is
+// read from both sides: the tests and Update.mm compile as Objective-C++, while
+// the Swift bridging header compiles as plain Objective-C and would not know
+// what std::string is. So the C++ half is behind the guard and the facade is
+// not, which is what makes one header serve both.
+#ifdef __cplusplus
+
 #include <string>
 
 /// How two releases compare: -1 when `a` is the older, 1 when `a` is the newer,
@@ -42,8 +51,12 @@ struct EZRelease {
 /// Fails, with a reason, on anything it cannot read: an update that installs
 /// the wrong thing is worse than one that does not happen, and the reason is
 /// the only thing the About box can show when it does not.
-bool EZReleaseFromJSON(const std::string &json, EZRelease *release,
-                       std::string *error);
+///
+/// Both out-parameters are required. Marked so rather than left to the reader,
+/// because the Objective-C half of this header puts the file under nullability
+/// audit and every pointer in it has to say which it is.
+bool EZReleaseFromJSON(const std::string &json, EZRelease *_Nonnull release,
+                       std::string *_Nonnull error);
 
 /// What the About box says about this build against the latest release.
 ///
@@ -51,3 +64,43 @@ bool EZReleaseFromJSON(const std::string &json, EZRelease *release,
 /// without the answer depending on which bundle happened to run it.
 std::string EZUpdateStatusText(const std::string &current,
                                const std::string &latest);
+
+#endif  // __cplusplus
+
+NS_ASSUME_NONNULL_BEGIN
+
+/// The answer to one check, in the form the About box needs it.
+///
+/// One object rather than several callback arguments, because every one of them
+/// is absent in some outcome — a network failure has a message and no version, a
+/// current build has a version and nothing to offer — and a shape that says so
+/// is better than four parameters that are sometimes nil.
+@interface EZUpdateCheck : NSObject
+/// A sentence to show, whatever happened. Never nil, including on failure.
+@property (readonly, copy) NSString *status;
+/// The latest release, when GitHub answered. Nil when it did not.
+@property (readonly, copy, nullable) NSString *version;
+@property (readonly, copy, nullable) NSString *downloadURL;
+/// Whether that release is newer than this build. The one thing that decides
+/// whether there is anything to offer, so it is computed once, here.
+@property (readonly) BOOL updateAvailable;
+@end
+
+@interface EZUpdater : NSObject
+
+/// CFBundleShortVersionString and CFBundleVersion of the running bundle: the
+/// marketing version and the build number Xcode wrote into it.
++ (NSString *)currentVersion;
++ (NSString *)currentBuild;
+
+/// Asks GitHub for the latest release and calls back on the main thread.
+///
+/// Every failure arrives as a check with a `status` to show rather than as an
+/// error to handle: an update check that cannot reach the network is an
+/// ordinary thing to happen to a menu-bar app, and the only useful response is
+/// to say so in the panel the user is already looking at.
++ (void)checkWithCompletion:(void (^)(EZUpdateCheck *check))completion;
+
+@end
+
+NS_ASSUME_NONNULL_END

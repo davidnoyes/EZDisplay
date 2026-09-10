@@ -162,3 +162,126 @@ std::string EZUpdateStatusText(const std::string &current,
             return "EZDisplay is up to date.";
     }
 }
+
+#pragma mark - Asking GitHub
+
+// The releases of this repository, by the name the remote uses. Case matters
+// nowhere in the URL, but it does in a diff, so it is spelled as the repository
+// is.
+static NSString *const kLatestReleaseURL =
+    @"https://api.github.com/repos/davidnoyes/EZDisplay/releases/latest";
+
+// Long enough for a slow network, short enough that the button does not look
+// stuck. The panel has no cancel, so this is the only bound on the wait.
+static const NSTimeInterval kCheckTimeout = 15.0;
+
+@interface EZUpdateCheck ()
+@property (copy) NSString *status;
+@property (copy, nullable) NSString *version;
+@property (copy, nullable) NSString *downloadURL;
+@property BOOL updateAvailable;
+@end
+
+@implementation EZUpdateCheck
+
++ (instancetype)failedWith:(NSString *)status
+{
+    EZUpdateCheck *check = [[EZUpdateCheck alloc] init];
+    check.status = status;
+    return check;
+}
+
+@end
+
+@implementation EZUpdater
+
++ (NSString *)currentVersion
+{
+    NSString *version = [[NSBundle mainBundle]
+        objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+
+    return version ?: @"";
+}
+
++ (NSString *)currentBuild
+{
+    NSString *build = [[NSBundle mainBundle]
+        objectForInfoDictionaryKey:@"CFBundleVersion"];
+
+    return build ?: @"";
+}
+
++ (void)checkWithCompletion:(void (^)(EZUpdateCheck *))completion
+{
+    NSMutableURLRequest *request = [NSMutableURLRequest
+        requestWithURL:[NSURL URLWithString:kLatestReleaseURL]
+           cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
+       timeoutInterval:kCheckTimeout];
+
+    // The documented media type for the API. Without it GitHub is free to
+    // answer in whatever its current default is.
+    [request setValue:@"application/vnd.github+json"
+        forHTTPHeaderField:@"Accept"];
+
+    // Answers arrive on a background queue. Everything the callback touches is
+    // a window, so the hop to the main thread happens here rather than being
+    // left to each caller to remember.
+    void (^finish)(EZUpdateCheck *) = ^(EZUpdateCheck *check) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(check);
+        });
+    };
+
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession]
+        dataTaskWithRequest:request
+          completionHandler:^(NSData *data, NSURLResponse *response,
+                              NSError *error) {
+        if (error) {
+            finish([EZUpdateCheck failedWith:
+                [NSString stringWithFormat:@"Could not reach GitHub: %@",
+                                           error.localizedDescription]]);
+            return;
+        }
+
+        NSInteger code = [(NSHTTPURLResponse *) response statusCode];
+
+        // 404 is the ordinary answer for a repository that has published
+        // nothing yet, which is not a fault and should not read as one.
+        if (code == 404) {
+            finish([EZUpdateCheck failedWith:@"There are no releases yet."]);
+            return;
+        }
+
+        if (code != 200) {
+            finish([EZUpdateCheck failedWith:
+                [NSString stringWithFormat:@"GitHub answered %ld.", (long) code]]);
+            return;
+        }
+
+        EZRelease release;
+        std::string reason;
+        std::string body((const char *) data.bytes, data.length);
+
+        if (!EZReleaseFromJSON(body, &release, &reason)) {
+            finish([EZUpdateCheck failedWith:
+                [NSString stringWithUTF8String:reason.c_str()]]);
+            return;
+        }
+
+        std::string current = [[self currentVersion] UTF8String];
+
+        EZUpdateCheck *check = [[EZUpdateCheck alloc] init];
+        check.status = [NSString stringWithUTF8String:
+            EZUpdateStatusText(current, release.version).c_str()];
+        check.version = [NSString stringWithUTF8String:release.version.c_str()];
+        check.downloadURL =
+            [NSString stringWithUTF8String:release.downloadURL.c_str()];
+        check.updateAvailable = EZCompareVersions(current, release.version) < 0;
+
+        finish(check);
+    }];
+
+    [task resume];
+}
+
+@end
