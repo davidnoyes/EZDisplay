@@ -3,7 +3,9 @@
 //  EZDisplay
 //
 
+#import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
+#import <Security/Security.h>
 
 #include <vector>
 
@@ -145,6 +147,61 @@ bool EZReleaseFromJSON(const std::string &json, EZRelease *release,
     return true;
 }
 
+namespace {
+
+// Whether `text` ends with `suffix`, with a name on it because the alternative
+// spelled out three times is what hides an off-by-one.
+bool EndsWith(const std::string &text, const std::string &suffix)
+{
+    return text.size() > suffix.size() &&
+           text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+}  // namespace
+
+bool EZUpdateCanReplaceBundle(const std::string &bundlePath, std::string *reason)
+{
+    if (!EndsWith(bundlePath, ".app")) {
+        *reason = "EZDisplay is not running from an application bundle, so "
+                  "there is nothing to replace.";
+        return false;
+    }
+
+    // Where macOS mounts the read-only copy it runs a quarantined app from.
+    // Matched anywhere in the path, because the parts either side of it are
+    // made up fresh for each launch.
+    if (bundlePath.find("/AppTranslocation/") != std::string::npos) {
+        *reason = "macOS is running EZDisplay from a temporary read-only copy. "
+                  "Move EZDisplay to your Applications folder, open it from "
+                  "there, and try again.";
+        return false;
+    }
+
+    reason->clear();
+    return true;
+}
+
+std::string EZUpdateAppInArchive(const std::vector<std::string> &entries)
+{
+    std::string found;
+
+    for (const std::string &entry : entries) {
+        if (!EndsWith(entry, ".app")) {
+            continue;
+        }
+
+        // A second candidate makes the first one a guess, and the guess is what
+        // would be installed and run.
+        if (!found.empty()) {
+            return "";
+        }
+
+        found = entry;
+    }
+
+    return found;
+}
+
 std::string EZUpdateStatusText(const std::string &current,
                                const std::string &latest)
 {
@@ -282,6 +339,254 @@ static const NSTimeInterval kCheckTimeout = 15.0;
     }];
 
     [task resume];
+}
+
+#pragma mark - Installing
+
+// An app is a few megabytes and the button says nothing about progress, so this
+// is generous: a download that is merely slow should finish rather than fail.
+static const NSTimeInterval kDownloadTimeout = 120.0;
+
+// Unpacks a downloaded archive, using ditto because Foundation cannot read a
+// zip and because ditto is what keeps a bundle's signature intact on the way
+// out. Anything that damages the signature would fail the check below, which
+// would report tampering rather than the unpacking that caused it.
+static BOOL Unpack(NSURL *archive, NSURL *into, NSString **error)
+{
+    NSTask *task = [[NSTask alloc] init];
+    task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/ditto"];
+    task.arguments = @[@"-x", @"-k", archive.path, into.path];
+    task.standardOutput = [NSFileHandle fileHandleWithNullDevice];
+    task.standardError = [NSFileHandle fileHandleWithNullDevice];
+
+    if (![task launchAndReturnError:nil]) {
+        *error = @"The download could not be unpacked.";
+        return NO;
+    }
+
+    [task waitUntilExit];
+
+    if (task.terminationStatus != 0) {
+        *error = @"The download was not a readable archive.";
+        return NO;
+    }
+
+    return YES;
+}
+
+// Whether `candidate` satisfies the designated requirement of the copy that is
+// running: the same bundle identifier, signed by the same certificate.
+//
+// This is the whole of the trust decision. A self-signed certificate means
+// nothing to Gatekeeper, so nothing in macOS will vouch for the download on its
+// own; what it can be measured against is the identity already on the machine,
+// which the user approved when they installed this copy.
+static BOOL SignedLikeThisApp(NSURL *candidate, NSString **error)
+{
+    SecCodeRef running = NULL;
+
+    if (SecCodeCopySelf(kSecCSDefaultFlags, &running) != errSecSuccess) {
+        *error = @"EZDisplay could not read its own signature.";
+        return NO;
+    }
+
+    SecRequirementRef requirement = NULL;
+    OSStatus status = SecCodeCopyDesignatedRequirement(
+        (SecStaticCodeRef) running, kSecCSDefaultFlags, &requirement);
+    CFRelease(running);
+
+    if (status != errSecSuccess) {
+        *error = @"EZDisplay could not read its own signature.";
+        return NO;
+    }
+
+    // An ad-hoc signature's requirement is this exact build's code hash, which
+    // no other build can satisfy, so the check below would refuse every genuine
+    // update as tampered. A developer build is the only way to be here, and
+    // saying so is more use than a security warning that is not one.
+    CFStringRef text = NULL;
+
+    if (SecRequirementCopyString(requirement, kSecCSDefaultFlags, &text) ==
+        errSecSuccess) {
+        BOOL adHoc = [(__bridge NSString *) text containsString:@"cdhash"];
+        CFRelease(text);
+
+        if (adHoc) {
+            CFRelease(requirement);
+            *error = @"This build is signed ad hoc, so it cannot tell a genuine "
+                     @"update from any other download. Install a release build "
+                     @"to update in place.";
+            return NO;
+        }
+    }
+
+    SecStaticCodeRef downloaded = NULL;
+    status = SecStaticCodeCreateWithPath((__bridge CFURLRef) candidate,
+                                         kSecCSDefaultFlags, &downloaded);
+
+    if (status != errSecSuccess) {
+        CFRelease(requirement);
+        *error = @"The download is not a signed application.";
+        return NO;
+    }
+
+    // Nested code as well as the outer bundle, because a helper or a framework
+    // inside it runs with the same privileges the app was granted.
+    status = SecStaticCodeCheckValidity(
+        downloaded, kSecCSCheckAllArchitectures | kSecCSCheckNestedCode,
+        requirement);
+
+    CFRelease(downloaded);
+    CFRelease(requirement);
+
+    if (status != errSecSuccess) {
+        *error = @"The download is not signed by the same certificate as this "
+                 @"copy of EZDisplay, so it has not been installed.";
+        return NO;
+    }
+
+    return YES;
+}
+
+// Everything from an unpacked archive to a replaced bundle. Returns nil when it
+// worked, and the sentence to show when it did not.
+static NSString *SwapIn(NSURL *unpacked, NSString *installed)
+{
+    NSFileManager *files = [NSFileManager defaultManager];
+    NSArray<NSString *> *names =
+        [files contentsOfDirectoryAtPath:unpacked.path error:nil];
+    std::vector<std::string> entries;
+
+    for (NSString *name in names) {
+        entries.push_back([name UTF8String]);
+    }
+
+    std::string app = EZUpdateAppInArchive(entries);
+
+    if (app.empty()) {
+        return @"The download did not contain a single application.";
+    }
+
+    NSURL *replacement =
+        [unpacked URLByAppendingPathComponent:@(app.c_str())];
+    NSString *refusal = nil;
+
+    if (!SignedLikeThisApp(replacement, &refusal)) {
+        return refusal;
+    }
+
+    NSError *failure = nil;
+
+    if (![files replaceItemAtURL:[NSURL fileURLWithPath:installed]
+                   withItemAtURL:replacement
+                  backupItemName:nil
+                         options:0
+                resultingItemURL:NULL
+                           error:&failure]) {
+        return [NSString stringWithFormat:@"EZDisplay could not be replaced: %@",
+                                          failure.localizedDescription];
+    }
+
+    return nil;
+}
+
++ (void)installRelease:(EZUpdateCheck *)release
+            completion:(void (^)(NSString *))completion
+{
+    NSString *installed = [[NSBundle mainBundle] bundlePath];
+    std::string refusal;
+
+    // Asked before the download rather than after it, so a copy that cannot be
+    // updated says so at once instead of after a wait.
+    if (!EZUpdateCanReplaceBundle([installed UTF8String], &refusal)) {
+        completion([NSString stringWithUTF8String:refusal.c_str()]);
+        return;
+    }
+
+    if (release.downloadURL == nil) {
+        completion(@"That release has nothing to download.");
+        return;
+    }
+
+    void (^finish)(NSString *) = ^(NSString *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(error);
+        });
+    };
+
+    NSURLRequest *request = [NSURLRequest
+        requestWithURL:[NSURL URLWithString:release.downloadURL]
+           cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
+       timeoutInterval:kDownloadTimeout];
+
+    NSURLSessionDownloadTask *task = [[NSURLSession sharedSession]
+        downloadTaskWithRequest:request
+              completionHandler:^(NSURL *location, NSURLResponse *response,
+                                  NSError *error) {
+        if (error) {
+            finish([NSString stringWithFormat:@"The download failed: %@",
+                                              error.localizedDescription]);
+            return;
+        }
+
+        NSInteger code = [(NSHTTPURLResponse *) response statusCode];
+
+        if (code != 200) {
+            finish([NSString stringWithFormat:@"The download answered %ld.",
+                                              (long) code]);
+            return;
+        }
+
+        NSFileManager *files = [NSFileManager defaultManager];
+
+        // A replacement directory rather than any temporary one, because it is
+        // guaranteed to be on the same volume as the app it will replace, which
+        // is what lets the swap below be a rename rather than a copy.
+        NSURL *work = [files URLForDirectory:NSItemReplacementDirectory
+                                    inDomain:NSUserDomainMask
+                           appropriateForURL:[NSURL fileURLWithPath:installed]
+                                      create:YES
+                                       error:nil];
+
+        if (work == nil) {
+            finish(@"There was nowhere to unpack the download.");
+            return;
+        }
+
+        // The downloaded file is deleted as soon as this handler returns, so
+        // all of the work happens inside it rather than being scheduled.
+        NSString *problem = nil;
+
+        if (Unpack(location, work, &problem)) {
+            problem = SwapIn(work, installed);
+        }
+
+        [files removeItemAtURL:work error:nil];
+        finish(problem);
+    }];
+
+    [task resume];
+}
+
++ (void)relaunch
+{
+    NSString *quoted = [NSString stringWithFormat:@"'%@'",
+        [[[NSBundle mainBundle] bundlePath]
+            stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"]];
+    int pid = [[NSProcessInfo processInfo] processIdentifier];
+
+    // A shell rather than a direct launch, because the new copy cannot start
+    // until this one is gone: `open` on a bundle whose app is still running
+    // activates the old process, and the update would look like it had not
+    // happened. The child outlives us — launchd adopts it.
+    NSTask *task = [[NSTask alloc] init];
+    task.executableURL = [NSURL fileURLWithPath:@"/bin/sh"];
+    task.arguments = @[@"-c", [NSString stringWithFormat:
+        @"while kill -0 %d 2>/dev/null; do sleep 0.2; done; exec /usr/bin/open %@",
+        pid, quoted]];
+
+    [task launchAndReturnError:nil];
+    [NSApp terminate:nil];
 }
 
 @end

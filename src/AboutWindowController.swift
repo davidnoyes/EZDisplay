@@ -18,6 +18,8 @@ class AboutWindowController: NSWindowController {
     private let statusLabel = NSTextField(labelWithString: "")
     private let checkButton = NSButton(title: "Check for Updates",
                                        target: nil, action: nil)
+    private let installButton = NSButton(title: "Install Update",
+                                         target: nil, action: nil)
     private let spinner = NSProgressIndicator()
 
     /// The release the last check found, when it found a newer one. Held so the
@@ -99,7 +101,14 @@ class AboutWindowController: NSWindowController {
         checkButton.bezelStyle = .rounded
         checkButton.keyEquivalent = "\r"
 
-        let buttonRow = NSStackView(views: [spinner, checkButton])
+        installButton.target = self
+        installButton.action = #selector(installUpdate)
+        installButton.bezelStyle = .rounded
+        // Hidden until a check finds something, so the panel never offers an
+        // update it does not have. NSStackView reclaims the space.
+        installButton.isHidden = true
+
+        let buttonRow = NSStackView(views: [spinner, checkButton, installButton])
         buttonRow.orientation = .horizontal
         buttonRow.spacing = 8
 
@@ -149,6 +158,7 @@ class AboutWindowController: NSWindowController {
         spinner.startAnimation(nil)
         statusLabel.stringValue = "Checking…"
         offered = nil
+        installButton.isHidden = true
         resizeToFit()
 
         EZUpdater.check { [weak self] check in
@@ -156,17 +166,54 @@ class AboutWindowController: NSWindowController {
 
             self.spinner.stopAnimation(nil)
             self.checkButton.isEnabled = true
-            self.statusLabel.stringValue = check.status
             self.offered = check.updateAvailable ? check : nil
+            self.installButton.isHidden = self.offered == nil
+            self.announce(check.status)
             self.resizeToFit()
-
-            // Announced as well as shown, because the answer arrives long after
-            // the click that asked for it and nothing else moves on screen.
-            NSAccessibility.post(element: self.statusLabel,
-                                 notification: .announcementRequested,
-                                 userInfo: [.announcement: check.status,
-                                            .priority: NSAccessibilityPriorityLevel.high.rawValue])
         }
+    }
+
+    @objc private func installUpdate() {
+        guard let release = offered else { return }
+
+        checkButton.isEnabled = false
+        installButton.isEnabled = false
+        spinner.startAnimation(nil)
+        announce("Downloading EZDisplay \(release.version ?? "").")
+        resizeToFit()
+
+        EZUpdater.installRelease(release) { [weak self] error in
+            guard let self else { return }
+
+            if let error {
+                self.spinner.stopAnimation(nil)
+                self.checkButton.isEnabled = true
+                self.installButton.isEnabled = true
+                self.announce(error)
+                self.resizeToFit()
+                return
+            }
+
+            // The buttons stay disabled: the bundle underneath this window has
+            // already been replaced, so there is nothing left to do here but
+            // start the copy that is now on disk.
+            self.announce("EZDisplay \(release.version ?? "") is installed. Restarting…")
+            self.resizeToFit()
+            EZUpdater.relaunch()
+        }
+    }
+
+    /// Writes a sentence into the status line and says it out loud.
+    ///
+    /// Spoken as well as shown because every one of these arrives long after
+    /// the click that asked for it, by which time a screen reader has moved on
+    /// and nothing else on the window has changed.
+    private func announce(_ sentence: String) {
+        statusLabel.stringValue = sentence
+        NSAccessibility.post(element: statusLabel,
+                             notification: .announcementRequested,
+                             userInfo: [.announcement: sentence,
+                                        .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
     override func showWindow(_ sender: Any?) {
@@ -175,6 +222,9 @@ class AboutWindowController: NSWindowController {
         // time the window opens may no longer be true.
         statusLabel.stringValue = ""
         offered = nil
+        installButton.isHidden = true
+        installButton.isEnabled = true
+        checkButton.isEnabled = true
         resizeToFit()
     }
 }
