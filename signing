@@ -1,0 +1,339 @@
+#!/bin/bash
+#
+# Manages the certificate EZDisplay is signed with.
+#
+# The app is signed by a self-signed certificate rather than an Apple one,
+# because an Apple one costs $99 a year and this project has one user. What the
+# certificate buys is not trust — nothing trusts it — but a *stable identity*.
+#
+# macOS pins an Accessibility grant to the app's designated requirement. Signed
+# ad-hoc, that requirement is the code hash, which changes on every build, so
+# every update silently voids the grant and the volume keys stop working until
+# someone toggles the switch in System Settings. Signed by a certificate, the
+# requirement names the certificate instead:
+#
+#     identifier "io.github.davidnoyes.ezdisplay" and certificate leaf = H"<sha1>"
+#
+# where <sha1> is the fingerprint printed by `show`. That is the same for every
+# build the certificate signs, so the grant survives updates. The same
+# stability is what lets `brew upgrade` carry the Gatekeeper approval forward
+# rather than asking again.
+#
+# So the certificate *is* the app's identity as far as macOS is concerned, and
+# replacing it costs every user a re-grant. It is created once, kept, and never
+# regenerated casually. `create` refuses to run twice for that reason, and
+# writes the backup before it touches the keychain, so an identity can never
+# exist without a copy of it.
+#
+# The certificate is not required to build. `run` and `install` use it when it
+# is there and sign ad-hoc when it is not, so a fresh clone needs no setup.
+
+set -u
+
+cd "$(dirname "$0")" || exit 1
+
+# The name the certificate is found by, in the keychain and on the xcodebuild
+# command line. Changing it is the same as replacing the certificate.
+IDENTITY="EZDisplay Self Signed"
+
+# Ten years. Expiry does not break apps already installed — the requirement is
+# a fingerprint match, not a validity check — but it stops new releases being
+# signed, and renewing means a new certificate and a new identity.
+DAYS=3650
+
+DEFAULT_BACKUP="${HOME}/Desktop/ezdisplay-signing.p12"
+
+usage() {
+    cat <<EOF
+Usage: signing <command>
+
+  create [PATH]    Create the signing certificate, saving a copy to PATH.
+                   Once, ever. PATH defaults to
+                   ${DEFAULT_BACKUP}
+  show             What the certificate is, and what it signs the app as.
+  restore PATH     Import that copy, here or on another machine.
+
+The certificate is the app's identity. Replacing it makes every user grant
+Accessibility again, so keep the file \`create\` writes, somewhere offline.
+EOF
+}
+
+# Holds the private key on the way into the keychain, so it has to be private
+# and it has to go. One directory for the whole run, removed on the way out,
+# because a per-function trap would be replaced by the next one to set it. Made
+# on first use rather than up front, so `show` and `help` do not fail on a
+# machine where the temporary directory is not writable.
+WORK=""
+trap 'if [[ -n $WORK ]]; then rm -rf "$WORK"; fi' EXIT
+
+make_work() {
+    [[ -n $WORK ]] && return 0
+
+    WORK=$(mktemp -d) || return 1
+    chmod 700 "$WORK"
+}
+
+# The path of the login keychain, quoted in the output of `security`, which is
+# where an identity has to live to be found by a build.
+login_keychain() {
+    security default-keychain -d user | sed -e 's/^ *"//' -e 's/"$//'
+}
+
+# The SHA-1 fingerprint of the certificate, or nothing if it is not installed.
+# This is the value the designated requirement is built from, so it is also how
+# to tell whether a copy of the file is the right certificate.
+#
+# Matched on the quoted name rather than on a field, because the name has
+# spaces in it. The closing quote is what stops it matching a longer name that
+# starts the same way.
+fingerprint() {
+    security find-identity -v -p codesigning |
+        grep -F "\"${IDENTITY}\"" |
+        awk '{ print $2; exit }'
+}
+
+# Puts a .p12 into the login keychain and trusts it for signing code.
+#
+# Importing alone is not enough: an untrusted certificate is not a valid
+# identity and `codesign` refuses to use it, reporting nothing more helpful
+# than "0 valid identities found". The trust goes in the user domain rather
+# than the system one, so it needs no administrator password and changes
+# nothing for any other account on the machine.
+install_p12() {
+    local p12="$1" password="$2" keychain="$3"
+
+    make_work || return 1
+
+    if ! security import "$p12" -k "$keychain" -P "$password" \
+                         -T /usr/bin/codesign -T /usr/bin/security >/dev/null
+    then
+        echo "Could not import the certificate. Wrong password, or a damaged file." >&2
+        return 1
+    fi
+
+    # add-trusted-cert wants the certificate on its own, not the pair.
+    if ! openssl pkcs12 -in "$p12" -clcerts -nokeys -passin "pass:${password}" \
+                        -out "${WORK}/trust.pem" 2>/dev/null
+    then
+        echo "The certificate imported but could not be read back to trust it." >&2
+        return 1
+    fi
+
+    echo "Approve the dialog to trust the certificate for signing code."
+
+    if ! security add-trusted-cert -r trustRoot -p codeSign \
+                                   -k "$keychain" "${WORK}/trust.pem"
+    then
+        echo "The certificate imported but was not trusted, so it cannot sign yet." >&2
+        echo "Trust it by hand in Keychain Access, or remove it and try again." >&2
+        return 1
+    fi
+
+    # `-T /usr/bin/codesign` above says codesign may use the key, but macOS may
+    # still confirm it the first time. Deliberately not pre-empted with
+    # `security set-key-partition-list`: that wants the login password, and a
+    # script asking for that is a habit worth not teaching for the sake of one
+    # dialog.
+    echo "The first build may ask permission to use the key."
+    echo "Choose \"Always Allow\" and it will not ask again."
+}
+
+# Asks twice, and refuses an empty answer, because this password is the only
+# thing protecting a private key in a file.
+read_new_password() {
+    local first second
+
+    read -r -s -p "Password to protect the saved copy: " first; echo
+    read -r -s -p "Again: " second; echo
+
+    if [[ $first != "$second" ]]; then
+        echo "Those did not match." >&2
+        return 1
+    fi
+
+    if [[ -z $first ]]; then
+        echo "An empty password would leave the private key readable by anyone." >&2
+        return 1
+    fi
+
+    printf '%s' "$first"
+}
+
+cmd_create() {
+    local target="${1:-}" password
+
+    # Empty rather than absent, because the dispatch below always passes an
+    # argument.
+    [[ -z $target ]] && target="$DEFAULT_BACKUP"
+
+    if [[ -n $(fingerprint) ]]; then
+        cat >&2 <<EOF
+"${IDENTITY}" already exists, so nothing was done.
+
+Creating a second one would replace the app's identity: every user would have
+to grant Accessibility again, and \`brew upgrade\` would warn that the signer
+had changed. To see the one you have, run: ./signing show
+EOF
+        return 1
+    fi
+
+    # A .p12 holds the private key, so one committed by accident is the identity
+    # given away. .gitignore is a guard, not a guarantee.
+    if [[ $(cd "$(dirname "$target")" 2>/dev/null && pwd) == "$PWD"* ]]; then
+        echo "Refusing to save inside the project. Choose a path outside it." >&2
+        return 1
+    fi
+
+    if [[ -e $target ]]; then
+        echo "${target} already exists. Move it aside or choose another path." >&2
+        return 1
+    fi
+
+    password=$(read_new_password) || return 1
+
+    make_work || return 1
+
+    # codeSigning marked critical is what makes this a signing identity rather
+    # than a general-purpose certificate; CA:false says it signs code and not
+    # other certificates. -nodes rather than its modern spelling -noenc,
+    # because a Mac without Homebrew has LibreSSL, which only knows the old one.
+    if ! openssl req -x509 -newkey rsa:2048 -sha256 -days "$DAYS" -nodes \
+                     -keyout "${WORK}/key.pem" -out "${WORK}/cert.pem" \
+                     -subj "/CN=${IDENTITY}" \
+                     -addext "basicConstraints=critical,CA:false" \
+                     -addext "keyUsage=critical,digitalSignature" \
+                     -addext "extendedKeyUsage=critical,codeSigning" 2>/dev/null
+    then
+        echo "Could not create the certificate." >&2
+        return 1
+    fi
+
+    # OpenSSL 3 defaults to encryption the macOS keychain cannot read, and says
+    # so as "MAC verification failed", which reads as a wrong password. These
+    # three flags are the whole of the fix, and LibreSSL accepts them too.
+    if ! openssl pkcs12 -export -out "$target" \
+                        -inkey "${WORK}/key.pem" -in "${WORK}/cert.pem" \
+                        -name "$IDENTITY" \
+                        -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES \
+                        -macalg sha1 -passout "pass:${password}" 2>/dev/null
+    then
+        echo "Could not save the certificate. Nothing was installed." >&2
+        rm -f "$target"
+        return 1
+    fi
+
+    # LibreSSL writes it world-readable.
+    chmod 600 "$target"
+
+    # Saved before installing, so there is no window in which the identity
+    # exists and no copy of it does.
+    if ! install_p12 "$target" "$password" "$(login_keychain)"; then
+        echo "The copy at ${target} is good; only the keychain step failed." >&2
+        return 1
+    fi
+
+    if [[ -z $(fingerprint) ]]; then
+        echo "The certificate installed but is not a valid signing identity." >&2
+        return 1
+    fi
+
+    cat <<EOF
+
+Created "${IDENTITY}", valid for $((DAYS / 365)) years.
+Fingerprint: $(fingerprint)
+Saved to:    ${target}
+
+There is no way to recreate this certificate, and losing it costs every user an
+Accessibility re-grant. Copy that file somewhere offline now.
+
+To let CI sign releases with the same certificate, add it to the repository as
+two secrets:
+
+    base64 -i "${target}" | gh secret set EZDISPLAY_SIGNING_P12
+    gh secret set EZDISPLAY_SIGNING_PASSWORD
+
+To put it on another machine, copy the file there and run:
+
+    ./signing restore <path>
+EOF
+}
+
+cmd_show() {
+    local print
+
+    print=$(fingerprint)
+
+    if [[ -z $print ]]; then
+        echo "\"${IDENTITY}\" is not installed. Builds are signed ad-hoc."
+        echo "To create it: ./signing create"
+        return 1
+    fi
+
+    echo "Identity:    ${IDENTITY}"
+    echo "Fingerprint: ${print}"
+
+    # Read out of the keychain rather than assumed, so this reports the
+    # certificate that is actually there.
+    security find-certificate -c "$IDENTITY" -p |
+        openssl x509 -noout -dates |
+        sed -e 's/^notBefore=/Created:     /' -e 's/^notAfter=/Expires:     /'
+
+    # The only honest way to show the designated requirement is to read it off
+    # something signed, so show it when there is a build to read it from.
+    if [[ -d EZDisplay.app ]]; then
+        echo
+        echo "The last build is signed as:"
+        # Both streams, because codesign puts the requirement on one or the
+        # other depending on what else it has to say, and comments it out when
+        # it treats the output as a requirements file rather than as a report.
+        # Only that line is wanted, however it arrives.
+        codesign -d -r- EZDisplay.app 2>&1 |
+            sed -n -e 's/^#* *designated => /    /p'
+    fi
+}
+
+cmd_restore() {
+    local source="${1:-}" password
+
+    if [[ -z $source ]]; then
+        echo "Usage: signing restore PATH" >&2
+        return 1
+    fi
+
+    if [[ ! -f $source ]]; then
+        echo "${source} is not a file." >&2
+        return 1
+    fi
+
+    if [[ -n $(fingerprint) ]]; then
+        echo "\"${IDENTITY}\" is already installed, fingerprint $(fingerprint)." >&2
+        echo "Remove it in Keychain Access first if you mean to replace it." >&2
+        return 1
+    fi
+
+    read -r -s -p "Password for ${source}: " password; echo
+
+    install_p12 "$source" "$password" "$(login_keychain)" || return 1
+
+    if [[ -z $(fingerprint) ]]; then
+        echo "The certificate imported but is not a valid signing identity." >&2
+        return 1
+    fi
+
+    cat <<EOF
+
+Restored "${IDENTITY}".
+Fingerprint: $(fingerprint)
+
+Check that against the machine it came from. The same fingerprint means the
+same identity, so builds from either machine are interchangeable.
+EOF
+}
+
+case "${1:-}" in
+    create)  cmd_create "${2:-}" ;;
+    show)    cmd_show ;;
+    restore) cmd_restore "${2:-}" ;;
+    ""|-h|--help|help) usage ;;
+    *)       echo "signing: unknown command \"$1\"" >&2; echo >&2; usage >&2; exit 1 ;;
+esac

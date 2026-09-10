@@ -54,6 +54,65 @@ owns that name, the script says so and leaves it alone.
 EZDisplay has no window and no Dock icon. After it launches, look for the
 display glyph in the menu bar.
 
+## Signing
+
+EZDisplay can sign itself with a self-signed certificate that you create. The
+certificate is optional. Without one, `./run` and `./install` sign the app with
+a hash of its own code, and everything still builds.
+
+What the certificate buys is a stable identity. macOS pins an Accessibility
+grant to the app's designated requirement. Signed with a code hash, that
+requirement changes on every build, so each update silently voids the grant and
+the volume keys stop working until you switch EZDisplay off and on again in
+**System Settings > Privacy & Security > Accessibility**. Signed with a
+certificate, the requirement names the certificate, and no build changes it.
+
+To create the certificate, run:
+
+```bash
+./signing create
+```
+
+The script asks you for a password. It saves the certificate and its private
+key to `~/Desktop/ezdisplay-signing.p12`, then adds them to your login
+keychain. macOS asks you to approve the trust setting, and the first build
+afterward may ask
+permission to use the key: choose **Always Allow**. To save the file somewhere
+else, pass a path.
+
+Keep that file, somewhere offline. The certificate is the app's identity, so
+replacing it makes everyone who runs EZDisplay grant Accessibility again, and
+there is no way to recreate it. For the same reason, `./signing create` refuses
+to run a second time.
+
+To see the certificate you have, and what it signs the app as, run
+`./signing show`:
+
+```text
+Identity:    EZDisplay Self Signed
+Fingerprint: 9664311C470698D2D1FB58B06378EAA8AD9E2E2F
+Created:     Sep 10 18:28:09 2026 GMT
+Expires:     Sep  7 18:28:09 2036 GMT
+
+The last build is signed as:
+    identifier "io.github.davidnoyes.ezdisplay" and certificate leaf = H"9664..."
+```
+
+To build on a second machine with the same identity, copy the file there and
+run:
+
+```bash
+./signing restore ~/Desktop/ezdisplay-signing.p12
+```
+
+Compare the fingerprint it prints against the one from the first machine. The
+same fingerprint means the same identity, so builds from either machine are
+interchangeable.
+
+The certificate is not an Apple one, so it does nothing for Gatekeeper: it
+carries no authority, and no other machine trusts it. Only notarization does
+that, and only through the paid Apple Developer Program.
+
 ## Use it
 
 Click the menu bar icon to get a section for each attached display. Each
