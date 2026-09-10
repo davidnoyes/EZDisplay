@@ -367,3 +367,110 @@ static const char *const kCapturedZipRelease = R"JSON(
 }
 
 @end
+
+#pragma mark - Whether the running copy can be replaced
+
+@interface BundleReplacementTests : XCTestCase
+@end
+
+@implementation BundleReplacementTests
+
+- (void)testAnInstalledBundleCanBeReplaced
+{
+    std::string reason;
+
+    XCTAssertTrue(EZUpdateCanReplaceBundle("/Applications/EZDisplay.app", &reason),
+                  @"refused with: %s", reason.c_str());
+}
+
+- (void)testABundleAnywhereElseCanStillBeReplaced
+{
+    // Nothing says an app has to live in /Applications, and a developer's copy
+    // in a build directory is the one that gets tested first.
+    std::string reason;
+
+    XCTAssertTrue(EZUpdateCanReplaceBundle(
+        "/Users/someone/git/ezdisplay/DerivedData/Build/Products/Debug/EZDisplay.app",
+        &reason), @"refused with: %s", reason.c_str());
+}
+
+- (void)testATranslocatedBundleIsRefused
+{
+    // macOS runs a quarantined app from a read-only copy at a path like this.
+    // Replacing that copy succeeds and changes nothing, so the refusal has to
+    // happen here rather than being discovered by the user next launch.
+    std::string reason;
+    bool allowed = EZUpdateCanReplaceBundle(
+        "/private/var/folders/vb/x/T/AppTranslocation/8A1F-4C/d/EZDisplay.app",
+        &reason);
+
+    XCTAssertFalse(allowed);
+    XCTAssertFalse(reason.empty(), @"a refusal has to say why");
+}
+
+- (void)testSomethingThatIsNotABundleIsRefused
+{
+    // The command line runs from the same code and has no bundle to swap.
+    std::string reason;
+
+    XCTAssertFalse(EZUpdateCanReplaceBundle("/usr/local/bin/ezdisplay", &reason));
+    XCTAssertFalse(reason.empty(), @"a refusal has to say why");
+}
+
+- (void)testTheRefusalNamesWhatToDoAboutIt
+{
+    // A reason with no remedy in it leaves the user stuck: the fix for
+    // translocation is to move the app and open it once from there.
+    std::string reason;
+
+    EZUpdateCanReplaceBundle("/private/var/folders/x/AppTranslocation/1/d/EZDisplay.app",
+                             &reason);
+
+    XCTAssertTrue(reason.find("Applications") != std::string::npos,
+                  @"reason was: %s", reason.c_str());
+}
+
+@end
+
+#pragma mark - Finding the app in an unpacked release
+
+@interface ArchiveContentsTests : XCTestCase
+@end
+
+@implementation ArchiveContentsTests
+
+- (void)testTheOnlyBundleIsTheApp
+{
+    XCTAssertEqual(EZUpdateAppInArchive({"EZDisplay.app"}),
+                   std::string("EZDisplay.app"));
+}
+
+- (void)testTheSidecarsMacOSAddsAreIgnored
+{
+    // What `zip -r` on a Mac actually produces, and what ditto leaves behind
+    // when it unpacks it.
+    std::vector<std::string> entries = {"__MACOSX", ".DS_Store", "EZDisplay.app"};
+
+    XCTAssertEqual(EZUpdateAppInArchive(entries), std::string("EZDisplay.app"));
+}
+
+- (void)testAnArchiveWithNoAppIsRefused
+{
+    XCTAssertEqual(EZUpdateAppInArchive({"README.md", "LICENSE"}),
+                   std::string(""));
+}
+
+- (void)testAnArchiveWithTwoAppsIsRefused
+{
+    // Guessing which one to install is guessing what gets run afterwards.
+    std::vector<std::string> entries = {"EZDisplay.app", "Something Else.app"};
+
+    XCTAssertEqual(EZUpdateAppInArchive(entries), std::string(""));
+}
+
+- (void)testAnEmptyArchiveIsRefused
+{
+    XCTAssertEqual(EZUpdateAppInArchive({}), std::string(""));
+}
+
+@end
