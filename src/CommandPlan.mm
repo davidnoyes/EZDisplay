@@ -107,6 +107,7 @@ std::string LongName(const std::string &option)
         {"-z", "--hz"},
         {"-f", "--force"},
         {"-h", "--help"},
+        {"-v", "--version"},
     };
 
     auto found = shortForms.find(option);
@@ -343,6 +344,18 @@ bool EZParseCommandLine(int argc, const char *const *argv,
         request->kind = EZCommandHelp;
         if (argc > 2)
             request->helpTopic = argv[2];
+        return true;
+    }
+
+    // Answered here rather than through `CommandFromWord`, for the same reason
+    // help is: the three spellings are not all command words, and the answer
+    // does not depend on a display, an option, or anything else the loop below
+    // reads. It qualifies nothing, so a word after it was a mistake.
+    if (command == "version" || command == "--version" || command == "-v") {
+        if (argc > 2)
+            return fail("version takes no arguments");
+
+        request->kind = EZCommandVersion;
         return true;
     }
 
@@ -902,6 +915,12 @@ std::string EZUsageText(const std::string &topic)
          "  launch-at-login     on|off   Start EZDisplay when you log in\n"
          "\n"
          "A truth value can be written on, off, true, false, yes, no, 1, or 0.\n"},
+
+        {"version",
+         "Usage: ezdisplay version\n"
+         "\n"
+         "Prints the release this is and the build it was made from, as\n"
+         "\"ezdisplay 1.2.3 (45)\". Also spelled --version and -v.\n"},
     };
 
     auto found = perCommand.find(topic);
@@ -927,6 +946,7 @@ std::string EZUsageText(const std::string &topic)
         "  restore    Remove the display overrides EZDisplay created\n"
         "  custom     List, add, or remove a custom resolution\n"
         "  prefs      Show or change the app's settings\n"
+        "  version    Print the release and build this is\n"
         "  help       Explain a command: ezdisplay help set\n"
         "\n"
         "Common options:\n"
@@ -936,12 +956,22 @@ std::string EZUsageText(const std::string &topic)
         "      --json                 Machine-readable output, where there is a\n"
         "                             listing to render\n"
         "  -h, --help                 This text, or a command's own\n"
+        "  -v, --version              The release and build this is\n"
         "\n"
         "A change that can black out the screen is applied, then reverted after 20\n"
         "seconds unless you answer y. Piped or redirected, where nobody can answer,\n"
         "the change is applied and kept.\n"
         "\n"
         "Exit status: 0 the change was kept, 1 it failed, 2 it was reverted.\n";
+}
+
+
+std::string EZVersionText(const std::string &shortVersion, const std::string &build)
+{
+    if (build.empty())
+        return "ezdisplay " + shortVersion + "\n";
+
+    return "ezdisplay " + shortVersion + " (" + build + ")\n";
 }
 
 

@@ -57,6 +57,24 @@ static void NoteInterrupt(int signal)
 }
 
 
+#pragma mark - Reading the version
+
+/// What `version` prints, read out of the bundle this binary lives in.
+///
+/// The command line is the same executable as the app, inside the same bundle,
+/// so `mainBundle` is the app's own Info.plist however the binary was reached —
+/// through the symlink on PATH or by its full path.
+static std::string VersionText()
+{
+    NSBundle *bundle = [NSBundle mainBundle];
+
+    NSString *shortVersion = [bundle objectForInfoDictionaryKey: @"CFBundleShortVersionString"];
+    NSString *build        = [bundle objectForInfoDictionaryKey: @"CFBundleVersion"];
+
+    return EZVersionText(shortVersion.UTF8String ?: "", build.UTF8String ?: "");
+}
+
+
 #pragma mark - Reading the display state
 
 /// The attached displays, in the order the interface reports them.
@@ -1146,6 +1164,11 @@ int RunCommandLine(int argc, char *const *argv)
 
     if (request.kind == EZCommandHelp) {
         fprintf(stdout, "%s", EZUsageText(request.helpTopic).c_str());
+        return EZExitKept;
+    }
+
+    if (request.kind == EZCommandVersion) {
+        fprintf(stdout, "%s", VersionText().c_str());
         return EZExitKept;
     }
 
