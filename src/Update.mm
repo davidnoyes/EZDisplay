@@ -113,7 +113,6 @@ bool EZReleaseFromJSON(const std::string &json, EZRelease *release,
     // stops mattering past this point.
     EZRelease found;
     found.version = tag[0] == 'v' ? tag.substr(1) : tag;
-    found.notes = StringField(object, @"body");
 
     id assets = object[@"assets"];
 
@@ -220,6 +219,17 @@ std::string EZUpdateStatusText(const std::string &current,
     }
 }
 
+std::string EZUpdateStatusForHTTPCode(int code)
+{
+    if (code == 200)
+        return "";
+
+    if (code == 404)
+        return "There are no releases yet.";
+
+    return "GitHub answered " + std::to_string(code) + ".";
+}
+
 #pragma mark - Asking GitHub
 
 // The releases of this repository, by the name the remote uses. Case matters
@@ -301,17 +311,11 @@ static const NSTimeInterval kCheckTimeout = 15.0;
         }
 
         NSInteger code = [(NSHTTPURLResponse *) response statusCode];
+        std::string refusal = EZUpdateStatusForHTTPCode((int) code);
 
-        // 404 is the ordinary answer for a repository that has published
-        // nothing yet, which is not a fault and should not read as one.
-        if (code == 404) {
-            finish([EZUpdateCheck failedWith:@"There are no releases yet."]);
-            return;
-        }
-
-        if (code != 200) {
+        if (!refusal.empty()) {
             finish([EZUpdateCheck failedWith:
-                [NSString stringWithFormat:@"GitHub answered %ld.", (long) code]]);
+                [NSString stringWithUTF8String:refusal.c_str()]]);
             return;
         }
 

@@ -95,6 +95,15 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
     XCTAssertEqual(ParsedOK({"-v"}).kind, EZCommandVersion);
 }
 
+- (void)testTheVersionIsAnsweredAfterACommandToo
+{
+    // The usage text lists --version beside --help under "Common options", so
+    // it has to work everywhere --help does. Answering only as the first word
+    // would leave `ezdisplay list --version` failing as an unknown option.
+    XCTAssertEqual(ParsedOK({"list", "--version"}).kind, EZCommandVersion);
+    XCTAssertEqual(ParsedOK({"set", "-v"}).kind, EZCommandVersion);
+}
+
 - (void)testVersionTakesNoArguments
 {
     // It answers one question and has nothing to qualify. Accepting a word and

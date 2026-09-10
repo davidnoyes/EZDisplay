@@ -222,6 +222,23 @@ The cask the workflow writes is [`etc/ezdisplay.rb`](etc/ezdisplay.rb) with its
 version and checksum filled in. That file is also how to create the tap by hand
 the first time, which its own comment explains.
 
+### When a release does not finish
+
+A failed run leaves nothing half-published. `gh release create` uploads to a
+draft and publishes only once the asset is there, and deletes the draft if
+either step fails, so the release either exists complete or does not exist.
+Fixing whatever failed and re-running the job from the Actions tab is enough.
+
+Two ends are worth checking anyway:
+
+- **The tag survives a failed run.** To build the same version again after
+  changing the commit, delete the tag on both sides and push it afresh:
+  `git tag -d v1.2.3 && git push --delete origin v1.2.3`. To ship a fix
+  instead, raise `MARKETING_VERSION` and tag that.
+- **The tap is updated after the release is published**, so a failure there
+  leaves a real release that `brew upgrade` cannot see. Re-running the job
+  fixes it, and so does editing `Casks/ezdisplay.rb` in the tap by hand.
+
 ## Use it
 
 Click the menu bar icon to get a section for each attached display. Each

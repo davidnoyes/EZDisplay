@@ -34,7 +34,7 @@ jobs:
     runs-on: macos-26
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Check the SDK is new enough
         run: |
@@ -84,7 +84,9 @@ jobs:
           password=$(openssl rand -base64 24)
           p12="${RUNNER_TEMP}/signing.p12"
 
-          printf '%s' "$SIGNING_P12" | base64 --decode > "$p12"
+          # The umask, rather than a chmod afterwards, so the key is never
+          # world-readable even for the moment between the two.
+          (umask 077 && printf '%s' "$SIGNING_P12" | base64 --decode > "$p12")
 
           security create-keychain -p "$password" "$keychain"
           security set-keychain-settings -lut 3600 "$keychain"
@@ -250,6 +252,8 @@ jobs:
       - name: Remove the certificate
         if: always()
         run: |
-          if [[ -n ${KEYCHAIN:-} && -f $KEYCHAIN ]]; then
+          set -euo pipefail
+
+          if [[ -n ${KEYCHAIN:-} && -f ${KEYCHAIN} ]]; then
             security delete-keychain "$KEYCHAIN"
           fi
