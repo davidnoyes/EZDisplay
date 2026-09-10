@@ -73,6 +73,14 @@ std::string EZUpdateStatusText(const std::string &current,
 /// else says what the code was, which is the only thing that would help.
 std::string EZUpdateStatusForHTTPCode(int code);
 
+/// Whether a designated requirement is an ad-hoc signature's.
+///
+/// An ad-hoc requirement names this exact build's code hash, which no other
+/// build can satisfy, so holding a download to it would refuse every genuine
+/// update as tampered. Only two requirements can reach this — the certificate's
+/// and an ad-hoc one — so the code hash is what tells them apart.
+bool EZUpdateRequirementIsAdHoc(const std::string &requirement);
+
 /// Whether an update is allowed to replace the bundle running from this path,
 /// and a sentence saying why not when it is not.
 ///
