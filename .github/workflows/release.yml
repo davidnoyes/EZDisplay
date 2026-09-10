@@ -240,9 +240,16 @@ jobs:
           # say which version of the file it is replacing.
           sha=$(gh api "repos/${tap}/contents/${path}" --jq .sha 2>/dev/null || true)
 
-          # Written through the API rather than by cloning and pushing, so the
-          # commit is signed: GitHub signs what it commits on your behalf, and
-          # a runner has no key of its own to sign with.
+          # Written through the API rather than by cloning and pushing, because
+          # a runner has no signing key and nothing to gain from a clone of a
+          # one-file repository.
+          #
+          # The commit is unsigned, and there is no way to make it otherwise
+          # from here. GitHub signs on your behalf only for the web interface
+          # and for requests authenticated as a GitHub App; this one carries a
+          # personal access token, so it is neither. That is why the tap has no
+          # required_signatures rule, unlike this repository — adding one would
+          # break every release at this step.
           gh api --method PUT "repos/${tap}/contents/${path}" \
               -f message="ezdisplay ${VERSION}" \
               -f content="$cask" \
