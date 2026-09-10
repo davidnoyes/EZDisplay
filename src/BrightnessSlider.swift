@@ -94,7 +94,7 @@ private final class TrackingSlider: NSSlider {
         row.alignment = .centerY
         row.spacing = 6
         // Leading inset clears the gutter a menu leaves for state marks, so the
-        // row lines up with the titles above it. The same 14 the colour rows use.
+        // row lines up with the titles above it. The same 14 the color rows use.
         row.edgeInsets = NSEdgeInsets(top: 4, left: 14, bottom: 4, right: 12)
         row.frame.size = row.fittingSize
 

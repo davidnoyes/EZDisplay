@@ -74,7 +74,7 @@ static void OpenCoreBrightness(void)
 /// dlsym returns null per function, so a renamed symbol there degrades to
 /// unavailable on its own; here the class could survive a macOS release that
 /// renamed one of its methods, and the first call would then raise an
-/// unrecognised-selector exception rather than reporting NO. Checking once, at
+/// unrecognized-selector exception rather than reporting NO. Checking once, at
 /// construction, keeps the header's promise without a guard at every call.
 static id MakeClient(NSString *className, const SEL *required, size_t count)
 {
@@ -147,7 +147,7 @@ static id<EZTrueToneClient> TrueToneClient(void)
 ///
 /// Every call into the framework goes through something like this rather than
 /// reading the out parameter directly, because a failed call leaves it
-/// untouched: an uninitialised struct then reads as plausible state. That is not
+/// untouched: an uninitialized struct then reads as plausible state. That is not
 /// hypothetical — the command sandbox blocks the daemon these clients talk to,
 /// and the first probe written against it reported a schedule and a tint that
 /// were stack contents.

@@ -117,7 +117,7 @@ static void BrightnessChanged(CFNotificationCenterRef center, void *observer,
 
     // Zeroed first, and the return code checked, for the reason
     // ReadBlueLightStatus gives: a failed call leaves the out parameter alone,
-    // and an uninitialised float reads back as a plausible brightness.
+    // and an uninitialized float reads back as a plausible brightness.
     float brightness = 0;
     if (gGetBrightness(display, &brightness) != 0)
         return -1;

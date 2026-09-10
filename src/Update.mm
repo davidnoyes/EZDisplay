@@ -17,7 +17,7 @@ namespace {
 // last digit left out. "v1.2.3-beta.1" and "1.2.3" both come back as {1, 2, 3}.
 //
 // Written by hand rather than with a scanner because the input is a git tag
-// somebody typed, and the useful behaviour on the unexpected is to stop reading
+// somebody typed, and the useful behavior on the unexpected is to stop reading
 // rather than to fail: a tag that starts with numbers still compares on them.
 std::vector<int> Components(const std::string &version)
 {
@@ -267,9 +267,22 @@ static const NSTimeInterval kCheckTimeout = 15.0;
 
 @implementation EZUpdater
 
+/// The bundle this code was compiled into.
+///
+/// Deliberately not `mainBundle`, which macOS derives from the path the process
+/// was started with. The Homebrew cask puts a symlink to this binary on PATH,
+/// and running the app by typing `ezdisplay` resolves `mainBundle` to
+/// /opt/homebrew/bin — so the version read below came back nil, the update
+/// comparison ran against an empty string, and `bundlePath` named a directory
+/// that is not a bundle at all.
++ (NSBundle *)ownBundle
+{
+    return [NSBundle bundleForClass:self];
+}
+
 + (NSString *)currentVersion
 {
-    NSString *version = [[NSBundle mainBundle]
+    NSString *version = [[self ownBundle]
         objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
 
     return version ?: @"";
@@ -277,7 +290,7 @@ static const NSTimeInterval kCheckTimeout = 15.0;
 
 + (NSString *)currentBuild
 {
-    NSString *build = [[NSBundle mainBundle]
+    NSString *build = [[self ownBundle]
         objectForInfoDictionaryKey:@"CFBundleVersion"];
 
     return build ?: @"";
@@ -473,7 +486,7 @@ static NSString *SwapIn(NSURL *unpacked, NSString *installed)
     std::string app = EZUpdateAppInArchive(entries);
 
     if (app.empty()) {
-        return @"The download did not contain a single application.";
+        return @"The download did not contain exactly one app.";
     }
 
     NSURL *replacement =
@@ -502,7 +515,7 @@ static NSString *SwapIn(NSURL *unpacked, NSString *installed)
 + (void)installRelease:(EZUpdateCheck *)release
             completion:(void (^)(NSString *))completion
 {
-    NSString *installed = [[NSBundle mainBundle] bundlePath];
+    NSString *installed = [[self ownBundle] bundlePath];
     std::string refusal;
 
     // Asked before the download rather than after it, so a copy that cannot be
@@ -580,7 +593,7 @@ static NSString *SwapIn(NSURL *unpacked, NSString *installed)
 + (void)relaunch
 {
     NSString *quoted = [NSString stringWithFormat:@"'%@'",
-        [[[NSBundle mainBundle] bundlePath]
+        [[[self ownBundle] bundlePath]
             stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"]];
     int pid = [[NSProcessInfo processInfo] processIdentifier];
 

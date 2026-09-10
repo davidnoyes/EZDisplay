@@ -2,19 +2,19 @@
 //  ColorModeTests.mm
 //  EZDisplay
 //
-//  Tests for the ambiguity judgement in src/ColorMode.mm.
+//  Tests for the ambiguity judgment in src/ColorMode.mm.
 //
 //  A display is matched to its AV interface on manufacturer and product alone,
 //  because the serial number is not reported consistently enough to break a
-//  tie. That leaves one question the whole colour-mode and HDR feature set
+//  tie. That leaves one question the whole color-mode and HDR feature set
 //  hangs off: when more than one AV interface reports the same product, is that
 //  two monitors, or one monitor the DCP has exposed more than once?
 //
-//  Getting it wrong in one direction attributes one monitor's colour mode to
+//  Getting it wrong in one direction attributes one monitor's color mode to
 //  another. Getting it wrong in the other direction reports nothing at all for
 //  a perfectly ordinary single display — which is the bug these tests were
 //  written for: a 34" Philips appears as two DCPAVVideoInterfaceProxy services
-//  with byte-identical product attributes, and the whole colour mode UI
+//  with byte-identical product attributes, and the whole color mode UI
 //  vanished because of it.
 //
 
@@ -48,7 +48,7 @@
 - (void)testTwoInterfacesForTwoIdenticalDisplaysAreAmbiguous
 {
     // Two of the same monitor. Either interface could belong to either, and
-    // picking one would silently report the wrong display's colour mode.
+    // picking one would silently report the wrong display's color mode.
     XCTAssertTrue([EZColorModes matchIsAmbiguousWithInterfaces:2 sharingDisplays:2]);
 }
 
@@ -71,7 +71,7 @@
 - (void)testDisplayCountIsNeverZeroInPracticeButMustNotCrash
 {
     // CGGetOnlineDisplayList can fail, which reports zero displays. Treating
-    // that as ambiguous would disable colour mode on the strength of an
+    // that as ambiguous would disable color mode on the strength of an
     // unrelated error, so it is not.
     XCTAssertFalse([EZColorModes matchIsAmbiguousWithInterfaces:2 sharingDisplays:0]);
 }
@@ -81,12 +81,12 @@
 
 //  Which of several matched interfaces to read from.
 //
-//  Recognising that two proxies are one monitor is only half of it: they are
+//  Recognizing that two proxies are one monitor is only half of it: they are
 //  not interchangeable. Both carry the same product attributes and the same
-//  colour and timing elements, but only one is attached to the live link, and
+//  color and timing elements, but only one is attached to the live link, and
 //  the other answers GetLinkData with kIOReturnNoDevice. Taking whichever the
 //  iterator yields first is a coin toss that, on the test display, lands on the
-//  dead one — which reads as the display having no colour mode at all while
+//  dead one — which reads as the display having no color mode at all while
 //  everything built from the element dictionaries carries on working.
 
 @interface ColorModeInterfaceChoiceTests : XCTestCase
@@ -134,7 +134,7 @@
 //  Choosing an interface when the display's port is known.
 //
 //  Product attributes identify a *model*, so two of the same monitor cannot be
-//  told apart by them and the code used to fail closed, reporting no colour
+//  told apart by them and the code used to fail closed, reporting no color
 //  mode for either. The registry says which port each display is attached to,
 //  and the proxies for a port carry that node in their own path, so a display
 //  can be paired to its own interfaces directly. Two identical monitors are on
@@ -159,7 +159,7 @@
 - (void)testTheInterfaceOnTheDisplaysOwnPortWins
 {
     // Two identical monitors, two interfaces, one each. Before the port was
-    // consulted this was the ambiguous case and both displays lost colour mode.
+    // consulted this was the ambiguous case and both displays lost color mode.
     XCTAssertEqual([EZColorModes preferredMatchIndexOnPort:(@[@NO, @YES])
                                                   liveness:(@[@YES, @YES])
                                            sharingDisplays:2], 1UL);
@@ -171,7 +171,7 @@
 - (void)testALiveInterfaceOnAnotherPortIsNeverChosen
 {
     // The other port is another monitor. Liveness does not make it ours, and
-    // choosing it would report a second display's colour mode as this one's.
+    // choosing it would report a second display's color mode as this one's.
     XCTAssertEqual([EZColorModes preferredMatchIndexOnPort:(@[@NO, @YES])
                                                   liveness:(@[@YES, @NO])
                                            sharingDisplays:2], 1UL);
@@ -262,7 +262,7 @@
 //  480 included — so a list built straight from it invites the user to apply an
 //  HDR mode the system has already ruled out. That was the inaccurate "HDR
 //  compatible" assessment, and applying one of those modes is what produced
-//  oversaturated colour.
+//  oversaturated color.
 //
 //  The carve-out matters as much as the rule. Dropping the mode the link is
 //  actually running would leave a list that contradicts itself and, worse, hide
@@ -306,17 +306,17 @@
 @end
 
 
-//  Whether applying a colour mode has to move macOS's HDR mode first.
+//  Whether applying a color mode has to move macOS's HDR mode first.
 //
-//  The bug this answers: with HDR off, picking the HDR colour mode gave wrong
-//  colours and left the HDR checkbox unticked; with HDR on, picking the SDR mode
-//  did the same the other way. A colour mode is the wire format alone, and the
+//  The bug this answers: with HDR off, picking the HDR color mode gave wrong
+//  colors and left the HDR checkbox unticked; with HDR on, picking the SDR mode
+//  did the same the other way. A color mode is the wire format alone, and the
 //  transfer function it carries is not the wire format's to choose — it belongs
 //  to the HDR mode, which is what the compositor renders. Move one and not the
 //  other and the cable declares PQ while the compositor emits plain gamma.
 //
-//  Three call sites hang off this one judgement — the apply, its rollback when
-//  the colour write does not take, and the revert twenty seconds later — so it
+//  Three call sites hang off this one judgment — the apply, its rollback when
+//  the color write does not take, and the revert twenty seconds later — so it
 //  is one function rather than three inline comparisons that can drift apart.
 
 @interface ColorModeHDRCouplingTests : XCTestCase

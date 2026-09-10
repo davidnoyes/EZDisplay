@@ -348,7 +348,7 @@ class DisplayPaneViewController: NSViewController, NSTableViewDataSource, NSTabl
         // Neither autoresizing default lets a declared width mean what it says.
         // Left alone, the autoresizing style spends the difference between the
         // columns and the table on whichever ones it likes — which is how
-        // "Refresh" came to read "Refr…" while its neighbours kept the width
+        // "Refresh" came to read "Refr…" while its neighbors kept the width
         // they were given. And whatever the widths, AppKit pads every column by
         // a flat amount, so a table whose columns sum to its own width overflows
         // and the rightmost one loses its tail.
@@ -386,14 +386,14 @@ class DisplayPaneViewController: NSViewController, NSTableViewDataSource, NSTabl
         // is for — and a box around it as well is the frame twice.
         scroll.borderType = .noBorder
         scroll.translatesAutoresizingMaskIntoConstraints = false
-        // 216, not 240: the colour-mode section below costs the height of a
+        // 216, not 240: the color-mode section below costs the height of a
         // second list, and the window has to stay inside the 775pt a 1280×800
         // screen leaves it.
         scroll.heightAnchor.constraint(equalToConstant: 216).isActive = true
 
         let applyButton = NSButton(title: "Apply Selected Resolution", target: self, action: #selector(applySelected))
 
-        // Colour mode: one writable control, the mode list. What the display
+        // Color mode: one writable control, the mode list. What the display
         // itself reports as valid at its current timing, so it changes with the
         // resolution and refresh rate selected above, and with HDR.
         //
@@ -619,12 +619,12 @@ class DisplayPaneViewController: NSViewController, NSTableViewDataSource, NSTabl
             tableView.selectRowIndexes(IndexSet(integer: idx), byExtendingSelection: false)
             tableView.scrollRowToVisible(idx)
         }
-        // The valid colour modes depend on the timing in force, so this belongs
+        // The valid color modes depend on the timing in force, so this belongs
         // with the mode reload rather than only with the display picker.
         reloadColorMode()
     }
 
-    /// Colour mode is read through a private, unversioned API that only covers
+    /// Color mode is read through a private, unversioned API that only covers
     /// natively connected external displays, so every path here has to be able
     /// to say "not available" instead of showing something wrong.
     @objc private func reloadColorMode() {
@@ -670,7 +670,7 @@ class DisplayPaneViewController: NSViewController, NSTableViewDataSource, NSTabl
         // that turns out not to hold.
         //
         // The ordering clause names its criterion rather than claiming "best",
-        // because the ranking is a judgement and an unexplained one looks like a
+        // because the ranking is a judgment and an unexplained one looks like a
         // bug: a 4:4:4 badge sits below a 4:2:2 one whenever the 4:2:2 mode is
         // the HDR one, and nothing on screen would otherwise say that was
         // deliberate.
@@ -731,7 +731,7 @@ class DisplayPaneViewController: NSViewController, NSTableViewDataSource, NSTabl
     }
 
     /// Nothing to apply when the selected row is the mode already running, which
-    /// is the state the window opens in. Saying so with a greyed-out button beats
+    /// is the state the window opens in. Saying so with a grayed-out button beats
     /// a click that correctly does nothing and looks broken doing it.
     private func updateColorApplyButton() {
         let row = colorTable.selectedRow
@@ -745,7 +745,7 @@ class DisplayPaneViewController: NSViewController, NSTableViewDataSource, NSTabl
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
-        // One delegate serves both tables; only the colour list has a button
+        // One delegate serves both tables; only the color list has a button
         // whose state depends on the selection.
         guard notification.object as? NSTableView === colorTable else { return }
         updateColorApplyButton()
@@ -799,7 +799,7 @@ class DisplayPaneViewController: NSViewController, NSTableViewDataSource, NSTabl
         }
     }
 
-    /// Shows the colour-mode explanation in a popover, for readers who cannot
+    /// Shows the color-mode explanation in a popover, for readers who cannot
     /// hover: Tab reaches the button, Space fires this, and the popover stays
     /// until it is dismissed.
     @objc private func showColorHelp() {
@@ -823,7 +823,7 @@ class DisplayPaneViewController: NSViewController, NSTableViewDataSource, NSTabl
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.reloadModes() }
     }
 
-    /// Switches the display to the selected colour mode. The apply itself, and
+    /// Switches the display to the selected color mode. The apply itself, and
     /// the confirm-or-revert around it, are shared with the status menu's
     /// picker — one route to the hardware, so one thing to get right.
     @objc private func applySelectedColorMode() {
@@ -1094,7 +1094,7 @@ class NightShiftPaneViewController: NSViewController {
     /// this while the window is closed.
     @objc private func reloadSchedule() {
         // Sunset to sunrise is dropped rather than disabled where location
-        // services are off, which is what System Settings does. A greyed row
+        // services are off, which is what System Settings does. A grayed row
         // would say the choice exists and this Mac cannot have it, and there is
         // nothing the user can do about it from here.
         let sunAllowed = EZNightShift.sunSchedulePermitted()

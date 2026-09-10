@@ -9,9 +9,9 @@
 #import "ColorMode.h"
 #import "DisplayPort.h"
 
-// The colour-mode stack is entirely private and unversioned, so it is reached
+// The color-mode stack is entirely private and unversioned, so it is reached
 // through dlsym rather than linked. Every symbol is optional: if one is
-// missing, the accessors below return nil/empty and Preferences says colour
+// missing, the accessors below return nil/empty and Preferences says color
 // mode is unavailable.
 
 typedef CFTypeRef IOAVRef;
@@ -43,7 +43,7 @@ static FnHDRSet            gSetHDREnabled;
 
 // GetLinkData fills a struct describing the live link. Two of its fields are
 // verbatim copies of the ElementData blobs the enumerations hand back, so the
-// current timing and colour mode are identified by exact byte match rather
+// current timing and color mode are identified by exact byte match rather
 // than by interpreting any of the private enums.
 //
 // The call takes no length argument, so there is no way to tell it how much
@@ -51,7 +51,7 @@ static FnHDRSet            gSetHDREnabled;
 // overrun. Everything read lives below offset 120, and the buffer is far
 // larger than that, but a future macOS could grow the struct. The tail below
 // is therefore slack plus a sentinel, checked after every call — if a later OS
-// writes past what we expect, colour mode reports itself unavailable instead
+// writes past what we expect, color mode reports itself unavailable instead
 // of parsing corrupted memory.
 static const size_t   kLinkDataSize     = 512;
 static const size_t   kLinkDataUsed     = 256;  // beyond this is slack + sentinel
@@ -126,7 +126,7 @@ static NSArray *CopyTimingElementsCached(CGDirectDisplayID display, IOAVRef ifac
 
 // Applying needs everything reading needs, plus the setter. Separate from
 // EnumerationAvailable so a build of macOS that drops only StartLink still
-// reports colour modes instead of hiding the whole section.
+// reports color modes instead of hiding the whole section.
 static BOOL ApplyAvailable(void)
 {
     return EnumerationAvailable() && gStartLink != NULL;
@@ -142,11 +142,11 @@ static NSString *EnumName(FnEnumString fn, uint32_t value)
 // for the value rather than a number read off one machine.
 //
 // EnumName falls back to the bare number, which matches neither test, so an
-// unrecognised transfer function reads as SDR. That is the wrong way round for
+// unrecognized transfer function reads as SDR. That is the wrong way round for
 // one caller taken alone — supportedForDisplay: drops a mode only when this
-// says HDR, so an unrecognised HDR transfer stays on offer even where the
+// says HDR, so an unrecognized HDR transfer stays on offer even where the
 // system has ruled HDR out — and it is still the right default, because the
-// unrecognised case is not per-value. If gEOTFString itself is missing, every
+// unrecognized case is not per-value. If gEOTFString itself is missing, every
 // value falls back to a number, every mode reads as HDR, and the list collapses
 // to the single current row on any display where HDR is unavailable. Losing the
 // whole list to a missing symbol is a worse failure than leaving one mode on
@@ -207,9 +207,9 @@ static BOOL IsHDRTransfer(uint32_t eotf)
 // Manufacturer and product are all there is to match on: the serial number is
 // not reported consistently enough to break a tie. Two identical monitors
 // therefore both match the same interfaces, and picking whichever the iterator
-// yielded first would attribute one monitor's colour mode to the other with no
+// yielded first would attribute one monitor's color mode to the other with no
 // sign anything was wrong. The whole iterator is drained so that case can be
-// recognised, and an ambiguous match reports nothing rather than guessing.
+// recognized, and an ambiguous match reports nothing rather than guessing.
 //
 // Several interfaces are not on their own evidence of several monitors: the DCP
 // exposes a proxy per stream, and a 34" Philips presents two of them carrying
@@ -266,7 +266,7 @@ static IOAVRef CopyAVInterfaceForDisplay(CGDirectDisplayID display)
                                      &iter) != KERN_SUCCESS)
         return NULL;
 
-    // nil on anything this does not recognise, which costs only the fallback to
+    // nil on anything this does not recognize, which costs only the fallback to
     // matching on product alone.
     NSString *portNode = EZPortNodeForDisplay(display);
 
@@ -331,22 +331,22 @@ static NSDictionary *ElementMatching(NSArray *elements, const uint8_t *bytes, si
 @end
 
 
-// Puts macOS's HDR mode where a colour mode needs it, and waits for the link to
+// Puts macOS's HDR mode where a color mode needs it, and waits for the link to
 // say so.
 //
 // The two are separate pieces of state and only one of them is ours. HDR mode is
 // what the compositor renders — SetHDRModeEnabled moves it, and macOS reconfigures
-// the link to match as a side effect. A colour mode is the wire format alone:
+// the link to match as a side effect. A color mode is the wire format alone:
 // StartLink changes what the cable carries and tells the compositor nothing.
 //
 // Set one without the other and they disagree. Measured: with HDR enabled,
-// applying an SDR-gamma colour mode left the link on SDR gamma and
+// applying an SDR-gamma color mode left the link on SDR gamma and
 // IsHDRModeEnabled still reporting 1 — so the compositor went on emitting PQ
 // while the cable declared plain gamma, and the display decoded one as the
-// other. That is the "colours are way off" case, and it is not a display fault.
+// other. That is the "colors are way off" case, and it is not a display fault.
 //
 // So the transfer function is not independently choosable: it belongs to the HDR
-// mode. Asking for a PQ colour mode is asking for HDR, and this grants it before
+// mode. Asking for a PQ color mode is asking for HDR, and this grants it before
 // the link is touched, rather than leaving the two to contradict each other.
 //
 // Waits by polling, because the link reports the change about 30 ms later —
@@ -370,7 +370,7 @@ static void SetHDRAndSettle(CGDirectDisplayID display, BOOL wanted)
 }
 
 
-// The colour element with this ID at the timing now in force, or nil. Separate
+// The color element with this ID at the timing now in force, or nil. Separate
 // from applying it because the answer is needed twice: once to find out whether
 // the mode wants HDR, and again after the HDR change, since that reconfigures
 // the link and the bytes have to be read against where it ended up.
@@ -400,8 +400,8 @@ static NSDictionary *ElementWithID(CGDirectDisplayID display, int elementID)
 //
 // GetLinkData returns a 256-byte description of the live link, and StartLink
 // takes the same 256 bytes back — one structure, read one way and written the
-// other. Changing colour mode is therefore that round trip with the 32-byte
-// colour blob swapped for another element's, and reverting is the same call
+// other. Changing color mode is therefore that round trip with the 32-byte
+// color blob swapped for another element's, and reverting is the same call
 // again with the blob the link was running before. There is no second
 // mechanism, which is the whole reason this can sit behind a confirm-or-revert
 // prompt honestly.
@@ -411,7 +411,7 @@ static NSDictionary *ElementWithID(CGDirectDisplayID display, int elementID)
 // *at this moment*. An element valid at some other timing is exactly the kind
 // the link might not come back from. Checking it here also covers reverting —
 // if the resolution changed while a confirmation was still on screen, macOS has
-// already picked a colour element for the new timing, and forcing the old one
+// already picked a color element for the new timing, and forcing the old one
 // back would be fighting the system over something it owns.
 static EZColorModeChangeResult ApplyColorElementData(CGDirectDisplayID display,
                                                       NSData *colorData)
@@ -466,7 +466,7 @@ static EZColorModeChangeResult ApplyColorElementData(CGDirectDisplayID display,
     // monitor the DCP has exposed more than once.
     //
     // A zero display count means CGGetOnlineDisplayList failed. That is not
-    // evidence of a second monitor, and disabling colour mode on the strength
+    // evidence of a second monitor, and disabling color mode on the strength
     // of an unrelated error would be the wrong way to be wrong.
     return matchingInterfaces > 1 && displaysWithSameProduct > 1;
 }
@@ -679,7 +679,7 @@ static EZColorModeChangeResult ApplyColorElementData(CGDirectDisplayID display,
         return nil;
 
     // Captured before anything moves, because reverting has to undo both halves
-    // and the HDR half is what macOS will change the colour mode from underneath
+    // and the HDR half is what macOS will change the color mode from underneath
     // us if it is left disagreeing.
     BOOL previousHDR  = [self isHDREnabledForDisplay:display];
     BOOL hdrAvailable = [self supportsHDRForDisplay:display];
@@ -703,7 +703,7 @@ static EZColorModeChangeResult ApplyColorElementData(CGDirectDisplayID display,
     // The transfer function belongs to macOS's HDR mode, not to the wire format
     // — see SetHDRAndSettle. Asking for a PQ mode is asking for HDR, so grant it
     // first; asking for a gamma mode is asking for HDR off, so take it away.
-    // Applying the wire format alone is what made the colours wrong.
+    // Applying the wire format alone is what made the colors wrong.
     if (movingHDR)
     {
         SetHDRAndSettle(display, wantsHDR);
@@ -718,13 +718,13 @@ static EZColorModeChangeResult ApplyColorElementData(CGDirectDisplayID display,
     }
 
     // Often a no-op by the time it runs, and rightly so: the HDR change lands on
-    // each state's default colour mode, which is usually the one being asked
+    // each state's default color mode, which is usually the one being asked
     // for. ApplyColorElementData reports that as applied without restarting the
     // link, so the display is not blanked twice to arrive where it already is.
     EZColorModeChangeResult result = ApplyColorElementData(display, wanted);
     if (result != EZColorModeChangeApplied)
     {
-        // Put the HDR mode back rather than leave it moved for a colour mode
+        // Put the HDR mode back rather than leave it moved for a color mode
         // that never took. Half a change is the state this whole function
         // exists to avoid.
         //
@@ -732,7 +732,7 @@ static EZColorModeChangeResult ApplyColorElementData(CGDirectDisplayID display,
         // outcome nobody should reverse. The difference is that this path also
         // returns nil, so there is no restore point, no confirm panel, and no
         // way back: leaving HDR moved would move it silently and permanently
-        // for a colour mode the user never got. Changing nothing is the honest
+        // for a color mode the user never got. Changing nothing is the honest
         // report of having changed nothing.
         if (movingHDR)
             SetHDRAndSettle(display, previousHDR);
@@ -759,20 +759,20 @@ static EZColorModeChangeResult ApplyColorElementData(CGDirectDisplayID display,
     // The undo wants an HDR state the display can no longer reach, so there is
     // no coherent half of it to put back. Twenty seconds is long enough for the
     // resolution to have moved and taken HDR with it, and when it has, macOS has
-    // already chosen a colour element to suit — which is Superseded's meaning
+    // already chosen a color element to suit — which is Superseded's meaning
     // exactly, and why this reports it rather than a fault.
     if (point.hdrEnabled != currentHDR && !movingHDR)
         return EZColorModeChangeSuperseded;
 
-    // HDR first and the colour mode second, the same order the apply used. The
-    // HDR change moves the colour mode on its own, so doing it the other way
+    // HDR first and the color mode second, the same order the apply used. The
+    // HDR change moves the color mode on its own, so doing it the other way
     // round would undo the restore that had just been made.
     if (movingHDR)
         SetHDRAndSettle(point.display, point.hdrEnabled);
 
     EZColorModeChangeResult result = ApplyColorElementData(point.display, point.colorData);
 
-    // And symmetrically with the apply: an undo whose colour half did not take
+    // And symmetrically with the apply: an undo whose color half did not take
     // is not an undo, so do not leave the HDR half moved on its own.
     if (result != EZColorModeChangeApplied && movingHDR)
         SetHDRAndSettle(point.display, currentHDR);
