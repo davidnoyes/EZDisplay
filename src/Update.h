@@ -44,7 +44,6 @@ int EZCompareVersions(const std::string &a, const std::string &b);
 struct EZRelease {
     std::string version;      // The tag with any leading "v" removed.
     std::string downloadURL;
-    std::string notes;
 };
 
 /// The release described by GitHub's latest-release response.
@@ -65,6 +64,14 @@ bool EZReleaseFromJSON(const std::string &json, EZRelease *_Nonnull release,
 /// without the answer depending on which bundle happened to run it.
 std::string EZUpdateStatusText(const std::string &current,
                                const std::string &latest);
+
+/// What the About box says when GitHub answers the check with `code`, or an
+/// empty string when the answer is one worth reading.
+///
+/// 404 is called out because it is the ordinary answer for a repository that
+/// has published nothing yet, and it should not read as a fault. Everything
+/// else says what the code was, which is the only thing that would help.
+std::string EZUpdateStatusForHTTPCode(int code);
 
 /// Whether an update is allowed to replace the bundle running from this path,
 /// and a sentence saying why not when it is not.

@@ -26,6 +26,21 @@ class AboutWindowController: NSWindowController {
     /// download button knows what it is offering.
     private var offered: EZUpdateCheck?
 
+    /// Bumped every time the window is opened afresh. One controller is kept
+    /// for the life of the app, so a check still in flight from the last time
+    /// the window was open would otherwise write its answer — and re-offer its
+    /// release — over a panel that has since been reset.
+    private var generation = 0
+
+    /// True from the click on **Install Update** until the swap has finished.
+    ///
+    /// An install cannot be abandoned halfway: the bundle underneath is being
+    /// replaced, and the last thing it does is restart the app. So a window
+    /// reopened while one is running is left exactly as it is, rather than
+    /// clearing the sentence that says so and re-enabling the buttons that
+    /// would start a second one.
+    private var installing = false
+
     @objc convenience init() {
         let window = NSWindow(contentRect: .zero,
                               styleMask: [.titled, .closable],
@@ -99,14 +114,12 @@ class AboutWindowController: NSWindowController {
         checkButton.target = self
         checkButton.action = #selector(checkForUpdates)
         checkButton.bezelStyle = .rounded
-        checkButton.keyEquivalent = "\r"
 
         installButton.target = self
         installButton.action = #selector(installUpdate)
         installButton.bezelStyle = .rounded
-        // Hidden until a check finds something, so the panel never offers an
-        // update it does not have. NSStackView reclaims the space.
-        installButton.isHidden = true
+
+        showInstallButton(false)
 
         let buttonRow = NSStackView(views: [spinner, checkButton, installButton])
         buttonRow.orientation = .horizontal
@@ -151,31 +164,48 @@ class AboutWindowController: NSWindowController {
         window.setFrameTopLeftPoint(topLeft)
     }
 
+    /// Shows or hides the install button, and gives the Return key to whichever
+    /// button now matters.
+    ///
+    /// Hidden until a check finds something, so the panel never offers an
+    /// update it does not have. NSStackView reclaims the space.
+    private func showInstallButton(_ shown: Bool) {
+        installButton.isHidden = !shown
+        checkButton.keyEquivalent = shown ? "" : "\r"
+        installButton.keyEquivalent = shown ? "\r" : ""
+    }
+
     // MARK: - Checking
 
     @objc private func checkForUpdates() {
+        let generation = self.generation
+
         checkButton.isEnabled = false
         spinner.startAnimation(nil)
         statusLabel.stringValue = "Checking…"
         offered = nil
-        installButton.isHidden = true
+        showInstallButton(false)
         resizeToFit()
 
         EZUpdater.check { [weak self] check in
-            guard let self else { return }
+            // Answers arrive long after the click, by which time the window may
+            // have been closed and reopened, which is a fresh panel and not
+            // this one.
+            guard let self, generation == self.generation else { return }
 
             self.spinner.stopAnimation(nil)
             self.checkButton.isEnabled = true
             self.offered = check.updateAvailable ? check : nil
-            self.installButton.isHidden = self.offered == nil
+            self.showInstallButton(self.offered != nil)
             self.announce(check.status)
             self.resizeToFit()
         }
     }
 
     @objc private func installUpdate() {
-        guard let release = offered else { return }
+        guard let release = offered, !installing else { return }
 
+        installing = true
         checkButton.isEnabled = false
         installButton.isEnabled = false
         spinner.startAnimation(nil)
@@ -184,6 +214,8 @@ class AboutWindowController: NSWindowController {
 
         EZUpdater.installRelease(release) { [weak self] error in
             guard let self else { return }
+
+            self.installing = false
 
             if let error {
                 self.spinner.stopAnimation(nil)
@@ -218,11 +250,22 @@ class AboutWindowController: NSWindowController {
 
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
+
+        // An install is replacing the bundle underneath this window and ends by
+        // restarting the app. Resetting the panel would take away the sentence
+        // saying so and put back the button that started it, and the restart
+        // would then arrive out of nowhere.
+        guard !installing else { return }
+
         // Cleared rather than left showing the last answer, which by the next
-        // time the window opens may no longer be true.
+        // time the window opens may no longer be true. Bumping the generation
+        // is what makes that stick: a check still running from last time now
+        // has nowhere to write.
+        generation += 1
         statusLabel.stringValue = ""
         offered = nil
-        installButton.isHidden = true
+        spinner.stopAnimation(nil)
+        showInstallButton(false)
         installButton.isEnabled = true
         checkButton.isEnabled = true
         resizeToFit()

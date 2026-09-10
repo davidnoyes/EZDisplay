@@ -271,6 +271,28 @@ static const char *const kCapturedZipRelease = R"JSON(
     XCTAssertEqual(EZCompareVersions("1.0.0", "1.0.0"), 0);
 }
 
+- (void)testASuffixAfterTheNumbersIsIgnored
+{
+    // Documented behavior rather than an accident: the only caller reads the
+    // latest-release endpoint, which never returns a prerelease, so a tag with
+    // a suffix on it compares as the release it is a candidate for. Offering
+    // 1.2.3 to someone running 1.2.3-beta.1 would be a downgrade dressed up as
+    // an update.
+    XCTAssertEqual(EZCompareVersions("1.2.3-beta.1", "1.2.3"), 0);
+    XCTAssertEqual(EZCompareVersions("1.2.3+build.7", "1.2.3"), 0);
+    XCTAssertEqual(EZCompareVersions("1.2.3-beta.1", "1.2.4"), -1);
+}
+
+- (void)testATagWithNoNumbersInItIsNotNewerThanAnything
+{
+    // A tag such as "nightly" reaches this from the API, and every component
+    // it has is zero. It must not read as newer than a real version, because
+    // that is the reading that offers an update to something that is not one.
+    XCTAssertEqual(EZCompareVersions("1.0.0", "nightly"), 1);
+    XCTAssertEqual(EZCompareVersions("nightly", "1.0.0"), -1);
+    XCTAssertEqual(EZCompareVersions("nightly", "nightly"), 0);
+}
+
 @end
 
 #pragma mark - Reading GitHub's answer
@@ -292,8 +314,6 @@ static const char *const kCapturedZipRelease = R"JSON(
     XCTAssertEqual(release.downloadURL,
                    std::string("https://github.com/davidnoyes/ezdisplay/"
                                "releases/download/v1.1.0/EZDisplay-1.1.0.zip"));
-    XCTAssertTrue(release.notes.find("in-app updater") != std::string::npos,
-                  @"notes were: %s", release.notes.c_str());
 }
 
 - (void)testAReleaseWithNothingToDownloadIsRefused
@@ -364,6 +384,30 @@ static const char *const kCapturedZipRelease = R"JSON(
 
     XCTAssertTrue(text.find("1.0.0") == std::string::npos,
                   @"status offered the older release: %s", text.c_str());
+}
+
+- (void)testAnAnswerWorthReadingHasNothingToSay
+{
+    XCTAssertEqual(EZUpdateStatusForHTTPCode(200), std::string(""));
+}
+
+- (void)testNoReleasesYetIsNotAFault
+{
+    // 404 is what a repository that has published nothing answers, which is an
+    // ordinary state for a new project and should not read as something broken.
+    XCTAssertEqual(EZUpdateStatusForHTTPCode(404),
+                   std::string("There are no releases yet."));
+}
+
+- (void)testAnyOtherCodeIsNamed
+{
+    // 403 is the rate limit, which is the one a run of checks actually hits.
+    // The number is in the text because it is the only part that says what to
+    // do differently.
+    XCTAssertEqual(EZUpdateStatusForHTTPCode(403),
+                   std::string("GitHub answered 403."));
+    XCTAssertEqual(EZUpdateStatusForHTTPCode(500),
+                   std::string("GitHub answered 500."));
 }
 
 @end

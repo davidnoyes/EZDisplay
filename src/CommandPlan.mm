@@ -394,6 +394,14 @@ bool EZParseCommandLine(int argc, const char *const *argv,
             return true;
         }
 
+        // Answered after any command for the same reason --help is: the usage
+        // text offers both as common options, and one that only worked as the
+        // first word would make that half untrue.
+        if (name == "--version") {
+            request->kind = EZCommandVersion;
+            return true;
+        }
+
         if (!CommandAllowsOption(request->kind, name))
             return fail("unknown option " + name + " for " + command);
 
