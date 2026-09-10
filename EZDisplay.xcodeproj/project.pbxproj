@@ -23,6 +23,7 @@
 		8FC72A1E24F664BA004E10E1 /* Utils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FC72A1B24F664BA004E10E1 /* Utils.swift */; };
 		D19A0032A0B1C2D3E4F50032 /* ColorMode.mm in Sources */ = {isa = PBXBuildFile; fileRef = D19A0031A0B1C2D3E4F50031 /* ColorMode.mm */; };
 		FA110011A0B1C2D3E4F50011 /* Update.mm in Sources */ = {isa = PBXBuildFile; fileRef = FA110002A0B1C2D3E4F50002 /* Update.mm */; };
+		FA110014A0B1C2D3E4F50014 /* AboutWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA110004A0B1C2D3E4F50004 /* AboutWindowController.swift */; };
 		B4C10013A0B1C2D3E4F50013 /* CoreBrightness.mm in Sources */ = {isa = PBXBuildFile; fileRef = B4C10012A0B1C2D3E4F50012 /* CoreBrightness.mm */; };
 		D19A0012A0B1C2D3E4F50012 /* DisplayModes.mm in Sources */ = {isa = PBXBuildFile; fileRef = D19A0002A0B1C2D3E4F50002 /* DisplayModes.mm */; };
 		E7D50003A0B1C2D3E4F50003 /* DisplayServices.mm in Sources */ = {isa = PBXBuildFile; fileRef = E7D50002A0B1C2D3E4F50002 /* DisplayServices.mm */; };
@@ -99,6 +100,7 @@
 		D19A0031A0B1C2D3E4F50031 /* ColorMode.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = ColorMode.mm; sourceTree = "<group>"; };
 		FA110001A0B1C2D3E4F50001 /* Update.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Update.h; sourceTree = "<group>"; };
 		FA110002A0B1C2D3E4F50002 /* Update.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = Update.mm; sourceTree = "<group>"; };
+		FA110004A0B1C2D3E4F50004 /* AboutWindowController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AboutWindowController.swift; sourceTree = "<group>"; };
 		B4C10011A0B1C2D3E4F50011 /* CoreBrightness.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CoreBrightness.h; sourceTree = "<group>"; };
 		B4C10012A0B1C2D3E4F50012 /* CoreBrightness.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = CoreBrightness.mm; sourceTree = "<group>"; };
 		D19A0001A0B1C2D3E4F50001 /* DisplayModes.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DisplayModes.h; sourceTree = "<group>"; };
@@ -209,6 +211,7 @@
 				D19A0031A0B1C2D3E4F50031 /* ColorMode.mm */,
 				FA110001A0B1C2D3E4F50001 /* Update.h */,
 				FA110002A0B1C2D3E4F50002 /* Update.mm */,
+				FA110004A0B1C2D3E4F50004 /* AboutWindowController.swift */,
 				B4C10011A0B1C2D3E4F50011 /* CoreBrightness.h */,
 				B4C10012A0B1C2D3E4F50012 /* CoreBrightness.mm */,
 				D19A0001A0B1C2D3E4F50001 /* DisplayModes.h */,
@@ -380,6 +383,7 @@
 				8FC72A1C24F664BA004E10E1 /* Resolution.swift in Sources */,
 				D19A0032A0B1C2D3E4F50032 /* ColorMode.mm in Sources */,
 				FA110011A0B1C2D3E4F50011 /* Update.mm in Sources */,
+				FA110014A0B1C2D3E4F50014 /* AboutWindowController.swift in Sources */,
 				B4C10013A0B1C2D3E4F50013 /* CoreBrightness.mm in Sources */,
 				D19A0012A0B1C2D3E4F50012 /* DisplayModes.mm in Sources */,
 				E7D50003A0B1C2D3E4F50003 /* DisplayServices.mm in Sources */,
