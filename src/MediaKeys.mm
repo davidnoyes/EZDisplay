@@ -123,18 +123,23 @@ int EZVolumeChicletsLit(int percent, bool muted)
     return (from * kEZVolumeChiclets + 50) / 100;
 }
 
-bool EZShouldPlayVolumeFeedback(const EZMediaKeyPress &press, bool enabled)
+bool EZIsVolumeFeedbackMoment(const EZMediaKeyPress &press)
 {
-    if (!enabled || press.key == EZMediaKeyNone)
+    if (press.key == EZMediaKeyNone)
         return false;
 
-    // Mute acts on its press and acts once, so that is where its click goes.
+    // Mute acts on its press and acts once, so that is where its feedback goes.
     if (press.key == EZMediaKeyMute)
         return press.pressed && !press.repeated;
 
-    // A volume key acts on every repeat, so a click there would be a burst of
-    // them. The release is the one event a hold has exactly one of.
+    // A volume key acts on every repeat, so feedback there would be a burst of
+    // it. The release is the one event a hold has exactly one of.
     return !press.pressed;
+}
+
+bool EZShouldPlayVolumeFeedback(const EZMediaKeyPress &press, bool enabled)
+{
+    return enabled && EZIsVolumeFeedbackMoment(press);
 }
 
 bool EZMediaKeyTakeEvent(const EZMediaKeyPress &press, bool intercept, int *held)

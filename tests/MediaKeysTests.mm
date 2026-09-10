@@ -674,3 +674,56 @@ static bool PlaysFor(int keyCode, bool down, bool repeated, bool enabled)
 }
 
 @end
+
+
+#pragma mark - The edge itself, without the Sound setting on top
+
+/// The click and the spoken announcement land on the same edge and are wanted
+/// under different conditions, so the edge is asked for on its own.
+///
+/// The reason is the case the two disagree on. Someone who has turned the
+/// feedback click off in the Sound pane has turned off a sound, not turned off
+/// VoiceOver — so the announcement has to survive a setting the click does not.
+@interface VolumeFeedbackMomentTests : XCTestCase
+@end
+
+@implementation VolumeFeedbackMomentTests
+
+static bool MomentFor(int keyCode, bool down, bool repeated)
+{
+    const EZMediaKeyPress press = EZDecodeMediaKey(kAuxControlButtons,
+                                                   Data1(keyCode, down, repeated));
+    return EZIsVolumeFeedbackMoment(press);
+}
+
+- (void)testTheEdgesAreTheSameOnesTheClickUses
+{
+    XCTAssertFalse(MomentFor(kSoundUp,   true,  false));
+    XCTAssertFalse(MomentFor(kSoundUp,   true,  true));
+    XCTAssertTrue (MomentFor(kSoundUp,   false, false));
+
+    XCTAssertFalse(MomentFor(kSoundDown, true,  false));
+    XCTAssertTrue (MomentFor(kSoundDown, false, false));
+
+    XCTAssertTrue (MomentFor(kMute,      true,  false));
+    XCTAssertFalse(MomentFor(kMute,      true,  true));
+    XCTAssertFalse(MomentFor(kMute,      false, false));
+}
+
+- (void)testAnEventThatIsNotAKeyIsNotAMoment
+{
+    XCTAssertFalse(MomentFor(kPlay, true,  false));
+    XCTAssertFalse(MomentFor(kPlay, false, false));
+}
+
+/// The split earns its place here and nowhere else: the moment stands whether
+/// or not the click is switched on, and the click is the moment with the
+/// setting applied.
+- (void)testTheSoundSettingNarrowsTheMomentAndDoesNotDefineIt
+{
+    XCTAssertTrue (MomentFor(kSoundUp, false, false));
+    XCTAssertFalse(PlaysFor (kSoundUp, false, false, false));
+    XCTAssertTrue (PlaysFor (kSoundUp, false, false, true));
+}
+
+@end

@@ -531,7 +531,12 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     if (statusMenu.numberOfItems > beforeGlobals)
         [statusMenu addItem: [NSMenuItem separatorItem]];
 
-    [statusMenu addItemWithTitle: @"Preferences…" action: @selector(showPreferences) keyEquivalent: @","];
+    // "Settings…", not "Preferences…": macOS renamed it in Ventura, and
+    // MainMenuTests already holds the app menu to that name. This is the menu
+    // an agent app is actually used through — the app menu only appears while
+    // one of its windows is frontmost — so the stale name was on the item
+    // almost everybody sees and the new one on the item almost nobody does.
+    [statusMenu addItemWithTitle: @"Settings…"    action: @selector(showPreferences) keyEquivalent: @","];
     [statusMenu addItemWithTitle: @"About EZDisplay" action: @selector(showAbout)    keyEquivalent: @""];
     [statusMenu addItemWithTitle: @"Quit"         action: @selector(quit)            keyEquivalent: @""];
     [statusMenu setDelegate: self];
@@ -811,12 +816,13 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 // A volume key this app took, on the main thread, press, repeat and release
 // alike.
 //
-// Two things happen here and they are on different edges of the key, which is
+// Three things happen here and they are on different edges of the key, which is
 // why the whole event arrives rather than just the ones that move something.
-// The change and the panel go with the press; the click goes with the release,
-// so holding a key ratchets the bar in silence and clicks once when it comes
-// up. That is what macOS does with the keys it keeps, and matching it is the
-// difference between feedback and a burst of clicks.
+// The change and the panel go with the press; the click and the spoken
+// announcement go with the release, so holding a key ratchets the bar in
+// silence and reports once when it comes up. That is what macOS does with the
+// keys it keeps, and matching it is the difference between feedback and a burst
+// of clicks.
 // The click goes first, and the order is the point rather than tidiness. For a
 // volume key the two never land on the same event, so it makes no difference
 // there — but mute acts and clicks on the same press, and acting on it is a
@@ -824,6 +830,9 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 // one key whose click has to be instant was the only one that arrived late.
 // Nothing about the click depends on the write, so there is no reason for it to
 // wait for one.
+// The announcement is the other way round for exactly the same reason: it says
+// what the level *is*, so on mute it has to come after the toggle or it speaks
+// the state the key just left.
 - (void) volumeKeyEvent: (EZMediaKeyPress) press
 {
     if (EZShouldPlayVolumeFeedback(press, VolumeHUD.feedbackSoundEnabled))
@@ -831,6 +840,16 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 
     if (EZMediaKeyShouldAct(press))
         [self moveVolumeBy: press.key];
+
+    if (EZIsVolumeFeedbackMoment(press))
+    {
+        // The same first-display compromise the panel makes, and read here
+        // rather than passed out of the move because a release moves nothing
+        // and still has a level to report.
+        VolumeSliderItem* shown = volumeItems.firstObject;
+        if (shown)
+            [VolumeHUD announceWithPercent: (int) shown.shownPercent muted: shown.shownMuted];
+    }
 }
 
 

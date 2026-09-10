@@ -152,12 +152,20 @@ const int kEZVolumeChiclets = 16;
 /// `percent` is clamped, because it comes from a DDC read and can be anything.
 int EZVolumeChicletsLit(int percent, bool muted);
 
-/// Whether this event is the one that plays the feedback click.
+/// Whether this event is the one a hold gives its feedback on.
 ///
 /// The edge is the whole of the native feel, and it differs by key. A volume
-/// key clicks when it comes back *up*, so holding it ratchets the bar in
-/// silence and clicks once rather than sixteen times. Mute clicks on the press.
+/// key answers when it comes back *up*, so holding it ratchets the bar in
+/// silence and reports once rather than sixteen times. Mute answers on the
+/// press, because that is where it acts.
 ///
-/// `enabled` is System Settings › Sound › **Play feedback when volume is
-/// changed**, which governs the click for every key and both edges.
+/// Separate from the click because two things ride this edge and they are not
+/// wanted under the same conditions: the click is switched off by a Sound
+/// setting, and the spoken announcement is not.
+bool EZIsVolumeFeedbackMoment(const EZMediaKeyPress &press);
+
+/// Whether this event is the one that plays the feedback click.
+///
+/// The moment, narrowed by System Settings › Sound › **Play feedback when
+/// volume is changed**, which governs the click for every key and both edges.
 bool EZShouldPlayVolumeFeedback(const EZMediaKeyPress &press, bool enabled);

@@ -41,6 +41,16 @@ func volumeFeedbackEnabled(_ raw: Any?) -> Bool {
     return (raw as? NSNumber)?.boolValue ?? true
 }
 
+/// The sentence VoiceOver is given for a level the panel only draws.
+///
+/// Separate from the posting so it can be tested, and worth testing because the
+/// panel carries no text: nothing on screen would contradict a wrong sentence,
+/// and the thing it replaces was VoiceOver reading the panel's role out loud.
+func volumeAnnouncement(percent: Int, muted: Bool) -> String {
+    if muted { return "Muted" }
+    return "Volume \(min(max(percent, 0), 100))%"
+}
+
 /// The bar, as sixteen rounded segments.
 ///
 /// Segments rather than a continuous fill because the keys move in sixteen
@@ -71,7 +81,13 @@ private final class ChicletBar: NSView {
 /// One panel for the whole app, reused: it is shown several times a second by a
 /// held key, and building a window for each press would be visible.
 @objc final class VolumeHUD: NSObject {
-    private static let shared = VolumeHUD()
+    // Internal rather than private, and only so a test can reach the panel.
+    // What the panel says about itself to the accessibility tree is the whole
+    // of the fix for VoiceOver reading it out as "system dialog", and two
+    // setter calls in an initializer are deleted by accident far more easily
+    // than they are noticed missing — the symptom is a screen reader saying
+    // the wrong thing, which nobody sighted will ever see.
+    static let shared = VolumeHUD()
 
     /// The click macOS plays for its own volume keys, taken from where macOS
     /// keeps it rather than shipped again here.
@@ -84,7 +100,7 @@ private final class ChicletBar: NSView {
     private static let linger: TimeInterval = 1.0
     private static let fade: TimeInterval = 0.25
 
-    private let panel: NSPanel
+    let panel: NSPanel
     private let glyph = NSImageView()
     private let bar = ChicletBar()
     private var dismissal: DispatchWorkItem?
@@ -113,6 +129,16 @@ private final class ChicletBar: NSView {
         panel.level = .screenSaver
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary,
                                     .ignoresCycle]
+
+        // Out of the accessibility tree entirely, which is a fix rather than a
+        // hiding. A titleless borderless panel at this level is given the
+        // subrole `AXSystemDialog`, and VoiceOver reads a system dialog out as
+        // it appears — so every volume key said "system dialog", announcing
+        // that something had happened without saying what. There is no title to
+        // give it either: the panel is a glyph and a bar, and it must not take
+        // focus. `announce(percent:muted:)` says the level instead.
+        panel.setAccessibilityElement(false)
+        panel.setAccessibilityRole(.unknown)
 
         glyph.frame = NSRect(x: 14, y: 12, width: 20, height: 20)
         glyph.imageScaling = .scaleProportionallyUpOrDown
@@ -229,6 +255,25 @@ private final class ChicletBar: NSView {
     /// `cfprefsd` flushes it, and the defaults read does not.
     @objc static var feedbackSoundEnabled: Bool {
         volumeFeedbackEnabled(UserDefaults.standard.object(forKey: "com.apple.sound.beep.feedback"))
+    }
+
+    /// Says the level out loud, for the panel VoiceOver can no longer see.
+    ///
+    /// Posted against the application rather than the panel, because the panel
+    /// was deliberately taken out of the accessibility tree and an element that
+    /// is not in the tree is not one to speak from.
+    ///
+    /// Not gated on the Sound pane's feedback setting, and not gated on
+    /// VoiceOver running either. The first is a decision — someone who switched
+    /// the click off switched off a sound, not their screen reader. The second
+    /// is unnecessary: with nothing listening the post does nothing.
+    @objc static func announce(percent: Int, muted: Bool) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        NSAccessibility.post(
+            element: NSApp as Any,
+            notification: .announcementRequested,
+            userInfo: [.announcement: volumeAnnouncement(percent: percent, muted: muted),
+                       .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
     /// Plays the click, restarting it if the last one has not finished.
