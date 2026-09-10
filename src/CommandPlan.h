@@ -250,7 +250,7 @@ bool EZParseCommandLine(int argc, const char *const *argv,
                         EZCommandRequest *request, std::string *error);
 
 /// The usage text for one command, or for the tool when `topic` is empty. An
-/// unrecognised topic gets the general text, because a reader who mistyped a
+/// unrecognized topic gets the general text, because a reader who mistyped a
 /// command name needs the list of real ones.
 std::string EZUsageText(const std::string &topic);
 
@@ -333,7 +333,7 @@ int EZChooseMode(const std::vector<EZModeCandidate> &modes,
 bool EZShouldPrompt(bool force, bool interactive);
 
 /// Whether an answer to that question keeps the change. Only an explicit yes
-/// does: an empty line, an unrecognised word, and end of input (a null pointer)
+/// does: an empty line, an unrecognized word, and end of input (a null pointer)
 /// all revert, because every reflex has to land on the outcome that can be
 /// undone by waiting.
 bool EZAnswerKeeps(const char *answer);

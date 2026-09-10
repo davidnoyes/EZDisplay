@@ -504,7 +504,7 @@ static EZDDCReading RefusedReading(void)
     XCTAssertEqual(EZDDCReading().outcome, EZDDCReplyGarbled);
 }
 
-- (void)testAnUnrecognisedOpcodeIsWorthRepeating
+- (void)testAnUnrecognizedOpcodeIsWorthRepeating
 {
     // Only the null message's exact shape counts as a refusal. Any other opcode
     // is a buffer that got here somehow, and guessing "the display means no"

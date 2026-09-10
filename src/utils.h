@@ -19,7 +19,7 @@
 #include <stddef.h>
 
 /// A readable name for a CoreGraphics error, for putting in a message to the
-/// user. Unrecognised values come back as `UNKNOWN` rather than nil, so a
+/// user. Unrecognized values come back as `UNKNOWN` rather than nil, so a
 /// format string always has something to print.
 NSString *DisplayErrorName(CGError error);
 

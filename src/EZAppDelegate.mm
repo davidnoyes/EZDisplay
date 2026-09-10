@@ -722,9 +722,9 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     }
 
     // On the shared apply queue rather than straight down the main thread, which
-    // is where this used to write. Choosing a colour mode now moves HDR as well
+    // is where this used to write. Choosing a color mode now moves HDR as well
     // — the transfer function belongs to it, not to the wire format — and that
-    // runs on the queue, so a click here while a colour mode is still landing
+    // runs on the queue, so a click here while a color mode is still landing
     // would put two threads into SetHDRModeEnabled on one display with nothing
     // deciding which of them wins.
     //
@@ -766,7 +766,7 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     }];
 }
 
-// Everything a colour-mode change needs is already on the item, and the apply
+// Everything a color-mode change needs is already on the item, and the apply
 // itself is EZColorModeUI's — the same call Preferences makes, so the two cannot
 // drift on what a confirm-or-revert means here.
 //
@@ -1013,7 +1013,7 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     statusItem.menu = statusMenu;
 
     // A template image is drawn as a mask, so it follows the menu bar from light
-    // to dark instead of staying one fixed colour. Set through the accessor:
+    // to dark instead of staying one fixed color. Set through the accessor:
     // this is Objective-C++, where `template` is a keyword and dot syntax on it
     // does not parse.
     NSImage* icon = [NSImage imageNamed: @"StatusIcon"];

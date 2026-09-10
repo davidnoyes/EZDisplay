@@ -114,7 +114,7 @@ final class RestoreAllScriptTests: XCTestCase {
     func testAPathWithNoFileBehindItProducesNoScript() {
         // The sweep reads the directory first, so a path can disappear between
         // being listed and being removed. It must drop out rather than become a
-        // command that fails under authorisation.
+        // command that fails under authorization.
         let absent = "DisplayVendorID-ffffffff/DisplayProductID-ffffffff"
         XCTAssertNil(RestoreSettingsItem.restoreAllScript(for: [absent]))
     }

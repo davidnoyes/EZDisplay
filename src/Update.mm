@@ -17,7 +17,7 @@ namespace {
 // last digit left out. "v1.2.3-beta.1" and "1.2.3" both come back as {1, 2, 3}.
 //
 // Written by hand rather than with a scanner because the input is a git tag
-// somebody typed, and the useful behaviour on the unexpected is to stop reading
+// somebody typed, and the useful behavior on the unexpected is to stop reading
 // rather than to fail: a tag that starts with numbers still compares on them.
 std::vector<int> Components(const std::string &version)
 {
