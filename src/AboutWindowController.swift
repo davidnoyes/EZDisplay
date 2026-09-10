@@ -15,6 +15,16 @@ import Cocoa
 
 class AboutWindowController: NSWindowController {
 
+    /// How wide the text is allowed to get, and how much room is left either
+    /// side of it.
+    ///
+    /// Nothing else decides the width of this window: it is sized to fit, and
+    /// the widest thing in it is a wrapped paragraph held to the column. So the
+    /// margin is not a nicety here, it is the only thing keeping the sentences
+    /// off the edges of the frame.
+    private static let column: CGFloat = 320
+    private static let margin: CGFloat = 44
+
     private let statusLabel = NSTextField(labelWithString: "")
     private let checkButton = NSButton(title: "Check for Updates",
                                        target: nil, action: nil)
@@ -75,26 +85,27 @@ class AboutWindowController: NSWindowController {
             "Version \(EZUpdater.currentVersion()) (build \(EZUpdater.currentBuild()))")
         version.textColor = .secondaryLabelColor
 
+        // Names refresh rate and HDR, which the app is largely for and the
+        // previous wording left out. Not a list of everything it does — there
+        // is no room for mirroring, Night Shift, and custom resolutions as
+        // well — so it reads as the headline features rather than the manifest.
         let summary = NSTextField(wrappingLabelWithString:
-            "Resolution, brightness, volume, and color for every display, "
-            + "from the menu bar.")
+            "Resolution, refresh rate, HDR, color, brightness, and volume "
+            + "for every display — from the menu bar.")
         summary.textColor = .secondaryLabelColor
-        summary.alignment = .center
-        summary.preferredMaxLayoutWidth = 340
+        holdToColumn(summary)
 
         let copyright = NSTextField(wrappingLabelWithString:
             Bundle.main.object(forInfoDictionaryKey: "NSHumanReadableCopyright")
                 as? String ?? "")
         copyright.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         copyright.textColor = .tertiaryLabelColor
-        copyright.alignment = .center
-        copyright.preferredMaxLayoutWidth = 340
+        holdToColumn(copyright)
 
-        statusLabel.alignment = .center
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.lineBreakMode = .byWordWrapping
         statusLabel.maximumNumberOfLines = 3
-        statusLabel.preferredMaxLayoutWidth = 340
+        holdToColumn(statusLabel)
         // Two lines' worth of room whether or not there is anything to say, so
         // the ordinary answers appear without the window changing size under
         // the pointer. Only a long failure message needs more, and resizeToFit
@@ -108,8 +119,8 @@ class AboutWindowController: NSWindowController {
 
         spinner.style = .spinning
         spinner.controlSize = .small
-        spinner.isDisplayedWhenStopped = false
         spinner.translatesAutoresizingMaskIntoConstraints = false
+        setBusy(false)
 
         checkButton.target = self
         checkButton.action = #selector(checkForUpdates)
@@ -134,15 +145,24 @@ class AboutWindowController: NSWindowController {
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 10
-        stack.edgeInsets = NSEdgeInsets(top: 24, left: 28, bottom: 20, right: 28)
+        stack.edgeInsets = NSEdgeInsets(top: 24, left: Self.margin,
+                                        bottom: 20, right: Self.margin)
         stack.setCustomSpacing(4, after: name)
         stack.setCustomSpacing(18, after: summary)
         stack.setCustomSpacing(18, after: buttonRow)
 
+        // Pinned as well as inset, because `edgeInsets` is not a required
+        // constraint across a vertical stack: fitting the window to its content
+        // ignores the left and right of it, and the window comes out exactly as
+        // wide as the text with no margin at all.
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.widthAnchor.constraint(
+            equalToConstant: Self.column + 2 * Self.margin).isActive = true
+
         // The separator has no width of its own inside a centering stack.
         separator.translatesAutoresizingMaskIntoConstraints = false
-        separator.widthAnchor.constraint(equalTo: stack.widthAnchor,
-                                         constant: -56).isActive = true
+        separator.widthAnchor.constraint(
+            equalToConstant: Self.column).isActive = true
 
         return stack
     }
@@ -164,6 +184,35 @@ class AboutWindowController: NSWindowController {
         window.setFrameTopLeftPoint(topLeft)
     }
 
+    /// Wraps a label to the text column, centered.
+    ///
+    /// The three of these have to agree, because the widest of them is what
+    /// the window is sized around and the margin is what is left over.
+    private func holdToColumn(_ label: NSTextField) {
+        label.alignment = .center
+        label.preferredMaxLayoutWidth = Self.column
+    }
+
+    /// Starts or stops the spinner, and takes its space back when it stops.
+    ///
+    /// Hidden rather than left to `isDisplayedWhenStopped`, which stops it
+    /// drawing but keeps its width. Sixteen invisible points and their spacing
+    /// beside one centered button are enough to make the button look as though
+    /// it is not centered, because it is not.
+    ///
+    /// Not private, so a test can put the panel into its busy state. There is
+    /// no other way in: the states that set this are reached only by a real
+    /// check against GitHub.
+    func setBusy(_ busy: Bool) {
+        spinner.isHidden = !busy
+
+        if busy {
+            spinner.startAnimation(nil)
+        } else {
+            spinner.stopAnimation(nil)
+        }
+    }
+
     /// Shows or hides the install button, and gives the Return key to whichever
     /// button now matters.
     ///
@@ -181,7 +230,7 @@ class AboutWindowController: NSWindowController {
         let generation = self.generation
 
         checkButton.isEnabled = false
-        spinner.startAnimation(nil)
+        setBusy(true)
         statusLabel.stringValue = "Checking…"
         offered = nil
         showInstallButton(false)
@@ -193,12 +242,11 @@ class AboutWindowController: NSWindowController {
             // this one.
             guard let self, generation == self.generation else { return }
 
-            self.spinner.stopAnimation(nil)
+            self.setBusy(false)
             self.checkButton.isEnabled = true
             self.offered = check.updateAvailable ? check : nil
             self.showInstallButton(self.offered != nil)
             self.announce(check.status)
-            self.resizeToFit()
         }
     }
 
@@ -208,9 +256,8 @@ class AboutWindowController: NSWindowController {
         installing = true
         checkButton.isEnabled = false
         installButton.isEnabled = false
-        spinner.startAnimation(nil)
+        setBusy(true)
         announce("Downloading EZDisplay \(release.version ?? "").")
-        resizeToFit()
 
         EZUpdater.installRelease(release) { [weak self] error in
             guard let self else { return }
@@ -218,11 +265,10 @@ class AboutWindowController: NSWindowController {
             self.installing = false
 
             if let error {
-                self.spinner.stopAnimation(nil)
+                self.setBusy(false)
                 self.checkButton.isEnabled = true
                 self.installButton.isEnabled = true
                 self.announce(error)
-                self.resizeToFit()
                 return
             }
 
@@ -230,22 +276,28 @@ class AboutWindowController: NSWindowController {
             // already been replaced, so there is nothing left to do here but
             // start the copy that is now on disk.
             self.announce("EZDisplay \(release.version ?? "") is installed. Restarting…")
-            self.resizeToFit()
             EZUpdater.relaunch()
         }
     }
 
-    /// Writes a sentence into the status line and says it out loud.
+    /// Writes a sentence into the status line, says it out loud, and makes
+    /// room for it.
     ///
     /// Spoken as well as shown because every one of these arrives long after
     /// the click that asked for it, by which time a screen reader has moved on
     /// and nothing else on the window has changed.
-    private func announce(_ sentence: String) {
+    ///
+    /// Resizing is part of the same act rather than a call beside it, because
+    /// it was one at all four call sites and the one that got forgotten would
+    /// be the long failure message that needed it. Not private, so a test can
+    /// put a long sentence in and measure what the window does with it.
+    func announce(_ sentence: String) {
         statusLabel.stringValue = sentence
         NSAccessibility.post(element: statusLabel,
                              notification: .announcementRequested,
                              userInfo: [.announcement: sentence,
                                         .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        resizeToFit()
     }
 
     override func showWindow(_ sender: Any?) {
@@ -269,7 +321,7 @@ class AboutWindowController: NSWindowController {
         generation += 1
         statusLabel.stringValue = ""
         offered = nil
-        spinner.stopAnimation(nil)
+        setBusy(false)
         showInstallButton(false)
         installButton.isEnabled = true
         checkButton.isEnabled = true
