@@ -15,6 +15,12 @@ xcuserdata/
 *.xcuserdatad
 *.xcscmblueprint
 
+# The signing certificate and its private key. `signing` refuses to save one
+# inside the project, so this is the second guard rather than the first.
+*.p12
+*.pem
+*.key
+
 # Editor and Finder litter.
 *.swp
 .DS_Store

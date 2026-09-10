@@ -36,15 +36,48 @@ osascript -e 'quit app "EZDisplay"' 2>/dev/null
 staging=$(mktemp -d)
 trap 'rm -rf "$staging"' EXIT
 
+# Signed by the project's own certificate when there is one, and ad-hoc when
+# there is not, so a fresh clone still installs with no setup. Manual style
+# goes with it because the project's own is Automatic, and Automatic refuses
+# any identity but ad-hoc without an Apple development team, which a
+# self-signed certificate deliberately does not have. See `signing`.
+IDENTITY="EZDisplay Self Signed"
+EXPORT_PLIST=etc/export.plist
+
+# Exporting re-signs, so the archive's identity is not enough on its own and
+# the export has to be told the same one. Written here rather than checked in,
+# because a clone with no certificate would fail on a plist that named one.
+if security find-identity -v -p codesigning | grep -qF "\"$IDENTITY\""; then
+    EXPORT_PLIST="${staging}/export.plist"
+    cat > "$EXPORT_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>mac-application</string>
+	<key>signingStyle</key>
+	<string>manual</string>
+	<key>signingCertificate</key>
+	<string>${IDENTITY}</string>
+</dict>
+</plist>
+EOF
+else
+    IDENTITY="-"
+fi
+
 # xcodebuild puts its progress on stdout and its complaints on stderr. Only the
 # second is worth keeping, and only if something goes wrong.
 if ! log=$(xcodebuild -archivePath "${staging}/EZDisplay" \
                       -scheme EZDisplay \
+                      CODE_SIGN_IDENTITY="$IDENTITY" \
+                      CODE_SIGN_STYLE=Manual \
                       archive 2>&1 >/dev/null) ||
    ! log=$(xcodebuild -exportArchive \
                       -archivePath "${staging}/EZDisplay.xcarchive" \
                       -exportPath "$DESTINATION" \
-                      -exportOptionsPlist etc/export.plist 2>&1 >/dev/null)
+                      -exportOptionsPlist "$EXPORT_PLIST" 2>&1 >/dev/null)
 then
     printf 'The build failed, so nothing was installed.\n\n%s\n' "$log" >&2
     exit 100
