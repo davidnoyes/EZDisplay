@@ -33,6 +33,14 @@ jobs:
     # which needs the macOS 26 SDK to compile even though it only runs on 26.
     runs-on: macos-26
 
+    env:
+      # Whether the tap is configured, worked out here because a step's `if`
+      # cannot read `secrets` at all — the context is not available to it, and
+      # a condition written there is silently never true. A job's `env` can
+      # read secrets, and a step's `if` can read `env`, so the answer is
+      # carried across as a string.
+      HAS_TAP_APP: ${{ secrets.HOMEBREW_TAP_APP_ID != '' }}
+
     steps:
       - uses: actions/checkout@v7
 
@@ -212,12 +220,32 @@ jobs:
               --generate-notes \
               --verify-tag
 
+      # The token this workflow is handed can only write to this repository, so
+      # the tap needs one of its own. A GitHub App rather than a personal access
+      # token, because the difference decides whether the cask commit is signed:
+      # GitHub signs a commit made through the API only when the request is
+      # authenticated as an App and carries no author, committer, or signature
+      # of its own. The write below sends only a message, the content, and the
+      # sha it replaces, so it qualifies.
+      #
+      # Skipped rather than failed when the App is not configured, so that the
+      # tap stays optional — see the note in the step below.
+      - name: Mint a token for the tap
+        id: tap-token
+        if: env.HAS_TAP_APP == 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.HOMEBREW_TAP_APP_ID }}
+          private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
+          # Narrowed to the tap, so a leaked token cannot reach this repository
+          # or any other. The App itself is installed only there as well.
+          owner: davidnoyes
+          repositories: homebrew-tap
+
       - name: Update the Homebrew tap
         env:
-          # A token for the tap repository, because the one this workflow gets
-          # can only write to this one. A fine-grained personal access token
-          # with Contents: read and write on davidnoyes/homebrew-tap is enough.
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          # Empty when the step above was skipped, which the guard below reads.
+          GH_TOKEN: ${{ steps.tap-token.outputs.token }}
         run: |
           set -euo pipefail
 
@@ -229,7 +257,7 @@ jobs:
           # the release is already published, so failing here would say the
           # release failed when it did not.
           if [[ -z ${GH_TOKEN:-} ]]; then
-            echo "::notice::HOMEBREW_TAP_TOKEN is not set, so ${tap} was left alone."
+            echo "::notice::HOMEBREW_TAP_APP_ID is not set, so ${tap} was left alone."
             exit 0
           fi
 
@@ -240,16 +268,9 @@ jobs:
           # say which version of the file it is replacing.
           sha=$(gh api "repos/${tap}/contents/${path}" --jq .sha 2>/dev/null || true)
 
-          # Written through the API rather than by cloning and pushing, because
-          # a runner has no signing key and nothing to gain from a clone of a
-          # one-file repository.
-          #
-          # The commit is unsigned, and there is no way to make it otherwise
-          # from here. GitHub signs on your behalf only for the web interface
-          # and for requests authenticated as a GitHub App; this one carries a
-          # personal access token, so it is neither. That is why the tap has no
-          # required_signatures rule, unlike this repository — adding one would
-          # break every release at this step.
+          # Written through the API rather than by cloning and pushing: it is
+          # how the commit gets signed, and a runner has no key of its own to
+          # sign with. See the App token step above for why that works.
           gh api --method PUT "repos/${tap}/contents/${path}" \
               -f message="ezdisplay ${VERSION}" \
               -f content="$cask" \
