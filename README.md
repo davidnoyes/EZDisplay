@@ -139,12 +139,12 @@ To see the certificate you have, and what it signs the app as, run
 
 ```text
 Identity:    EZDisplay Self Signed
-Fingerprint: 9664311C470698D2D1FB58B06378EAA8AD9E2E2F
-Created:     Sep 10 18:28:09 2026 GMT
-Expires:     Sep  7 18:28:09 2036 GMT
+Fingerprint: 8A3571A0DEC49BF8587E4434369AE3DA70F6E21C
+Created:     Sep 10 21:38:21 2026 GMT
+Expires:     Sep  7 21:38:21 2036 GMT
 
 The last build is signed as:
-    identifier "io.github.davidnoyes.ezdisplay" and certificate leaf = H"9664..."
+    identifier "io.github.davidnoyes.ezdisplay" and certificate leaf = H"8a35..."
 ```
 
 To build on a second machine with the same identity, copy the file there and
