@@ -22,6 +22,7 @@
 		8FC72A1C24F664BA004E10E1 /* Resolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FC72A1924F664BA004E10E1 /* Resolution.swift */; };
 		8FC72A1E24F664BA004E10E1 /* Utils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FC72A1B24F664BA004E10E1 /* Utils.swift */; };
 		D19A0032A0B1C2D3E4F50032 /* ColorMode.mm in Sources */ = {isa = PBXBuildFile; fileRef = D19A0031A0B1C2D3E4F50031 /* ColorMode.mm */; };
+		FA110011A0B1C2D3E4F50011 /* Update.mm in Sources */ = {isa = PBXBuildFile; fileRef = FA110002A0B1C2D3E4F50002 /* Update.mm */; };
 		B4C10013A0B1C2D3E4F50013 /* CoreBrightness.mm in Sources */ = {isa = PBXBuildFile; fileRef = B4C10012A0B1C2D3E4F50012 /* CoreBrightness.mm */; };
 		D19A0012A0B1C2D3E4F50012 /* DisplayModes.mm in Sources */ = {isa = PBXBuildFile; fileRef = D19A0002A0B1C2D3E4F50002 /* DisplayModes.mm */; };
 		E7D50003A0B1C2D3E4F50003 /* DisplayServices.mm in Sources */ = {isa = PBXBuildFile; fileRef = E7D50002A0B1C2D3E4F50002 /* DisplayServices.mm */; };
@@ -53,6 +54,8 @@
 		E7E5001FA0B1C2D3E4F5001F /* ResolutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7E50023A0B1C2D3E4F50023 /* ResolutionTests.swift */; };
 		E7E50021A0B1C2D3E4F50021 /* ColorModeTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = E7E50020A0B1C2D3E4F50020 /* ColorModeTests.mm */; };
 		E7E50022A0B1C2D3E4F50022 /* ColorMode.mm in Sources */ = {isa = PBXBuildFile; fileRef = D19A0031A0B1C2D3E4F50031 /* ColorMode.mm */; };
+		FA110012A0B1C2D3E4F50012 /* UpdateTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = FA110003A0B1C2D3E4F50003 /* UpdateTests.mm */; };
+		FA110013A0B1C2D3E4F50013 /* Update.mm in Sources */ = {isa = PBXBuildFile; fileRef = FA110002A0B1C2D3E4F50002 /* Update.mm */; };
 		A1B20011A0B1C2D3E4F50011 /* CommandPlan.mm in Sources */ = {isa = PBXBuildFile; fileRef = A1B20002A0B1C2D3E4F50002 /* CommandPlan.mm */; };
 		A1B20012A0B1C2D3E4F50012 /* CommandPlan.mm in Sources */ = {isa = PBXBuildFile; fileRef = A1B20002A0B1C2D3E4F50002 /* CommandPlan.mm */; };
 		A1B20013A0B1C2D3E4F50013 /* CommandPlanTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = A1B20003A0B1C2D3E4F50003 /* CommandPlanTests.mm */; };
@@ -94,6 +97,8 @@
 		8FC72A1B24F664BA004E10E1 /* Utils.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Utils.swift; sourceTree = "<group>"; };
 		D19A0030A0B1C2D3E4F50030 /* ColorMode.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorMode.h; sourceTree = "<group>"; };
 		D19A0031A0B1C2D3E4F50031 /* ColorMode.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = ColorMode.mm; sourceTree = "<group>"; };
+		FA110001A0B1C2D3E4F50001 /* Update.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Update.h; sourceTree = "<group>"; };
+		FA110002A0B1C2D3E4F50002 /* Update.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = Update.mm; sourceTree = "<group>"; };
 		B4C10011A0B1C2D3E4F50011 /* CoreBrightness.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CoreBrightness.h; sourceTree = "<group>"; };
 		B4C10012A0B1C2D3E4F50012 /* CoreBrightness.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = CoreBrightness.mm; sourceTree = "<group>"; };
 		D19A0001A0B1C2D3E4F50001 /* DisplayModes.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DisplayModes.h; sourceTree = "<group>"; };
@@ -120,6 +125,7 @@
 		E7E5001EA0B1C2D3E4F5001E /* RestoreSettingsTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = RestoreSettingsTests.swift; sourceTree = "<group>"; };
 		E7E50023A0B1C2D3E4F50023 /* ResolutionTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ResolutionTests.swift; sourceTree = "<group>"; };
 		E7E50020A0B1C2D3E4F50020 /* ColorModeTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = ColorModeTests.mm; sourceTree = "<group>"; };
+		FA110003A0B1C2D3E4F50003 /* UpdateTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = UpdateTests.mm; sourceTree = "<group>"; };
 		A1B20001A0B1C2D3E4F50001 /* CommandPlan.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CommandPlan.h; sourceTree = "<group>"; };
 		A1B20002A0B1C2D3E4F50002 /* CommandPlan.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = CommandPlan.mm; sourceTree = "<group>"; };
 		A1B20003A0B1C2D3E4F50003 /* CommandPlanTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = CommandPlanTests.mm; sourceTree = "<group>"; };
@@ -201,6 +207,8 @@
 				8FC72A1B24F664BA004E10E1 /* Utils.swift */,
 				D19A0030A0B1C2D3E4F50030 /* ColorMode.h */,
 				D19A0031A0B1C2D3E4F50031 /* ColorMode.mm */,
+				FA110001A0B1C2D3E4F50001 /* Update.h */,
+				FA110002A0B1C2D3E4F50002 /* Update.mm */,
 				B4C10011A0B1C2D3E4F50011 /* CoreBrightness.h */,
 				B4C10012A0B1C2D3E4F50012 /* CoreBrightness.mm */,
 				D19A0001A0B1C2D3E4F50001 /* DisplayModes.h */,
@@ -246,6 +254,7 @@
 				E7E5001EA0B1C2D3E4F5001E /* RestoreSettingsTests.swift */,
 				E7E50023A0B1C2D3E4F50023 /* ResolutionTests.swift */,
 				E7E50020A0B1C2D3E4F50020 /* ColorModeTests.mm */,
+				FA110003A0B1C2D3E4F50003 /* UpdateTests.mm */,
 				A1B20003A0B1C2D3E4F50003 /* CommandPlanTests.mm */,
 				D0C10003A0B1C2D3E4F50003 /* DDCProtocolTests.mm */,
 				D0C50003A0B1C2D3E4F50003 /* MediaKeysTests.mm */,
@@ -370,6 +379,7 @@
 				8F48E61724FC761C0073123B /* RestoreSettings.swift in Sources */,
 				8FC72A1C24F664BA004E10E1 /* Resolution.swift in Sources */,
 				D19A0032A0B1C2D3E4F50032 /* ColorMode.mm in Sources */,
+				FA110011A0B1C2D3E4F50011 /* Update.mm in Sources */,
 				B4C10013A0B1C2D3E4F50013 /* CoreBrightness.mm in Sources */,
 				D19A0012A0B1C2D3E4F50012 /* DisplayModes.mm in Sources */,
 				E7D50003A0B1C2D3E4F50003 /* DisplayServices.mm in Sources */,
@@ -406,6 +416,8 @@
 				E7E5001FA0B1C2D3E4F5001F /* ResolutionTests.swift in Sources */,
 				E7E50021A0B1C2D3E4F50021 /* ColorModeTests.mm in Sources */,
 				E7E50022A0B1C2D3E4F50022 /* ColorMode.mm in Sources */,
+				FA110012A0B1C2D3E4F50012 /* UpdateTests.mm in Sources */,
+				FA110013A0B1C2D3E4F50013 /* Update.mm in Sources */,
 				A1B20012A0B1C2D3E4F50012 /* CommandPlan.mm in Sources */,
 				A1B20013A0B1C2D3E4F50013 /* CommandPlanTests.mm in Sources */,
 				D0C10012A0B1C2D3E4F50012 /* DDCProtocol.mm in Sources */,
