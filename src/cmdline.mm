@@ -61,12 +61,16 @@ static void NoteInterrupt(int signal)
 
 /// What `version` prints, read out of the bundle this binary lives in.
 ///
-/// The command line is the same executable as the app, inside the same bundle,
-/// so `mainBundle` is the app's own Info.plist however the binary was reached —
-/// through the symlink on PATH or by its full path.
+/// Deliberately not `mainBundle`, which is derived from the path the process
+/// was started with rather than from where the executable really is. Reached
+/// through the symlink the Homebrew cask puts on PATH, that resolves to
+/// /opt/homebrew/bin, whose Info.plist does not exist, and both keys below come
+/// back nil — so `ezdisplay --version` printed no version at all for anyone who
+/// installed it the documented way. `bundleForClass:` is derived from the image
+/// the class was compiled into, which is this binary however it was reached.
 static std::string VersionText()
 {
-    NSBundle *bundle = [NSBundle mainBundle];
+    NSBundle *bundle = [NSBundle bundleForClass: [EZDisplays class]];
 
     NSString *shortVersion = [bundle objectForInfoDictionaryKey: @"CFBundleShortVersionString"];
     NSString *build        = [bundle objectForInfoDictionaryKey: @"CFBundleVersion"];

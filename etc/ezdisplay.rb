@@ -34,7 +34,7 @@ cask "ezdisplay" do
   # race it. `brew upgrade --greedy` still takes a newer cask when there is one.
   auto_updates true
 
-  depends_on macos: ">= :big_sur"
+  depends_on macos: :big_sur
   depends_on arch: :arm64
 
   app "EZDisplay.app"
