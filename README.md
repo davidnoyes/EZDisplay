@@ -29,9 +29,42 @@ attached display](etc/screenshot.png)
 
 - Apple silicon. The project builds for `arm64` only.
 - macOS 11.0 or later to run.
-- Xcode, to build. There is no binary release.
+- Xcode, only to build it yourself.
 
 ## Install
+
+EZDisplay has no window and no Dock icon. However you install it, look for the
+display glyph in the menu bar after it launches.
+
+### From a release
+
+Download `EZDisplay-<version>.zip` from the
+[latest release](https://github.com/davidnoyes/EZDisplay/releases/latest), unzip
+it, and move **EZDisplay.app** to your **Applications** folder.
+
+macOS refuses the first launch and offers to move the app to the Trash, because
+EZDisplay is signed by its own certificate rather than by an Apple one — which
+costs $99 a year for a project with one user. Open **System Settings > Privacy &
+Security**, find the message naming EZDisplay, and choose **Open Anyway**.
+
+That is once per machine rather than once per update. Every release is signed by
+the same certificate, so later versions open without asking again.
+
+### With Homebrew
+
+```bash
+brew install --cask davidnoyes/tap/ezdisplay
+```
+
+The cask lives in a personal tap rather than in Homebrew's own, which takes only
+apps that pass Gatekeeper. Homebrew quarantines the app exactly as a download
+does, so the **Open Anyway** step applies here too, once. It does link the
+command line to `ezdisplay` for you.
+
+Because EZDisplay updates itself, the cask says so, and `brew upgrade` leaves it
+alone unless you pass `--greedy`.
+
+### From source
 
 To build and install into `/Applications`, run the install script from the
 project root:
@@ -51,8 +84,24 @@ which needs an administrator password. Say no and everything still works: the
 binary inside the bundle takes the same arguments. If something else already
 owns that name, the script says so and leaves it alone.
 
-EZDisplay has no window and no Dock icon. After it launches, look for the
-display glyph in the menu bar.
+## Updating
+
+EZDisplay checks when you ask it to, and not otherwise: nothing runs in the
+background and nothing is downloaded until you press a button. Open **About
+EZDisplay** from the menu and choose **Check for Updates**.
+
+Where there is a newer release, an **Install Update** button appears. It
+downloads the release, proves the download is this app signed by the same
+certificate, puts it where the running copy is, and restarts. A download that
+fails that proof is refused: a self-signed certificate means nothing to
+Gatekeeper, so the signature this app already carries is the only thing an
+update can be held to.
+
+Two cases are refused before anything is downloaded, because replacing the
+bundle could not work in either. One is a copy macOS has translocated, which
+runs from a read-only image that disappears when it quits — moving the app to
+**Applications** and opening it from there is the fix. The other is the command
+line, which is a binary inside a bundle rather than a bundle.
 
 ## Signing
 
@@ -132,6 +181,46 @@ more time.
 The certificate is not an Apple one, so it does nothing for Gatekeeper: it
 carries no authority, and no other machine trusts it. Only notarization does
 that, and only through the paid Apple Developer Program.
+
+## Releasing
+
+A release is a tag. Set `MARKETING_VERSION` in the Xcode project to the new
+version, commit that, then tag the commit and push the tag:
+
+```bash
+git tag -s v1.2.3 -m "EZDisplay 1.2.3"
+git push origin v1.2.3
+```
+
+GitHub Actions does the rest, in
+[`.github/workflows/release.yml`](.github/workflows/release.yml). It refuses a
+tag that disagrees with `MARKETING_VERSION`, so the project stays the one place
+a version is written down. It then runs the tests, builds Release signed with
+the certificate, checks the result carries the certificate's designated
+requirement rather than an ad-hoc one, and publishes the zip with a checksum and
+install instructions. The build number is the workflow run, which rises on its
+own and says which run produced a given copy.
+
+That check on the requirement is the part worth keeping. A runner with no
+certificate would sign the app ad-hoc, produce a build that looks perfectly
+normal, and void the Accessibility grant of everyone who installed it.
+
+The workflow reads three repository secrets:
+
+| Secret | What it is |
+| --- | --- |
+| `EZDISPLAY_SIGNING_P12` | The `.p12` from `./signing create`, base64-encoded |
+| `EZDISPLAY_SIGNING_PASSWORD` | The password protecting that file |
+| `HOMEBREW_TAP_TOKEN` | A token that can write to the tap. Optional: without it the release is published and the cask is left alone |
+
+```bash
+base64 -i ~/Desktop/ezdisplay-signing.p12 | gh secret set EZDISPLAY_SIGNING_P12
+gh secret set EZDISPLAY_SIGNING_PASSWORD
+```
+
+The cask the workflow writes is [`etc/ezdisplay.rb`](etc/ezdisplay.rb) with its
+version and checksum filled in. That file is also how to create the tap by hand
+the first time, which its own comment explains.
 
 ## Use it
 
