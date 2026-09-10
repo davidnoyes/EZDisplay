@@ -30,6 +30,17 @@ APP="DerivedData/Build/Products/Debug/EZDisplay.app"
 IDENTITY="EZDisplay Self Signed"
 security find-identity -v -p codesigning | grep -qF "\"$IDENTITY\"" || IDENTITY="-"
 
+# The designated requirement is what macOS pins the Accessibility grant to, so
+# a build that changes it is a build that voids the grant. Read off the bundle
+# rather than inferred from the identity, because the identity does not tell
+# you: the first build after `./signing create` changes the requirement even
+# though every build after it leaves it alone.
+requirement() {
+    codesign -d -r- "$1" 2>&1 | sed -n -e 's/^#* *designated => //p'
+}
+
+WAS=$(requirement "$APP")
+
 # xcodebuild puts its progress on stdout and its complaints on stderr. Only the
 # second is worth keeping, and only if something goes wrong.
 if ! log=$(xcodebuild -scheme EZDisplay \
@@ -69,11 +80,16 @@ open "$APP"
 
 echo "EZDisplay is running, built from $(git rev-parse --short HEAD 2>/dev/null || echo 'this working copy')."
 
-# Ad-hoc, the Accessibility grant is pinned to the code hash, which every build
-# changes. With a certificate it is pinned to the certificate, which no build
-# changes, so there is nothing to say.
-if [[ $IDENTITY == "-" ]]; then
-    echo "A rebuild voids the Accessibility grant, so the volume keys need it"
-    echo "switching off and on again in System Settings > Privacy & Security."
-    echo "Running ./signing create once would stop that happening."
+# Ad-hoc, the requirement is the code hash and every build changes it. Signed,
+# it is the certificate and no build does — except the first one, which is the
+# build going from one to the other. Nothing to say when there was no previous
+# build to compare against: there is no grant to lose yet.
+if [[ -n $WAS && $(requirement "$APP") != "$WAS" ]]; then
+    echo "This build is signed differently from the last, so the Accessibility"
+    echo "grant is void: switch EZDisplay off and on again in System Settings >"
+    echo "Privacy & Security > Accessibility, or the volume keys will not work."
+
+    if [[ $IDENTITY == "-" ]]; then
+        echo "Running ./signing create once would stop that happening every build."
+    fi
 fi
