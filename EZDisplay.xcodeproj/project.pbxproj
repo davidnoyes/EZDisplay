@@ -15,6 +15,7 @@
 		358D5660212DEDED00F9E9BF /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 358D5659212DEDEC00F9E9BF /* README.md */; };
 		358D5661212DEDED00F9E9BF /* ResMenuItem.mm in Sources */ = {isa = PBXBuildFile; fileRef = 358D565B212DEDED00F9E9BF /* ResMenuItem.mm */; };
 		358F04E3212D7E6500671ABD /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 358F04E2212D7E6500671ABD /* IOKit.framework */; };
+		D0C60021A0B1C2D3E4F50021 /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D0C60020A0B1C2D3E4F50020 /* CoreAudio.framework */; };
 		35C9D3B2212C04DD00D652F7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 35C9D3B1212C04DD00D652F7 /* Assets.xcassets */; };
 		8F13DECC24FDCE790049A2DF /* export.plist in Resources */ = {isa = PBXBuildFile; fileRef = 8F13DECB24FDCE790049A2DF /* export.plist */; };
 		8F48E61724FC761C0073123B /* RestoreSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F48E61624FC761C0073123B /* RestoreSettings.swift */; };
@@ -31,6 +32,18 @@
 		C0570019A0B1C2D3E4F50019 /* ColorModeUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0570009A0B1C2D3E4F50009 /* ColorModeUI.swift */; };
 		E7D60002A0B1C2D3E4F50002 /* BrightnessSlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7D60001A0B1C2D3E4F50001 /* BrightnessSlider.swift */; };
 		D0C40002A0B1C2D3E4F50002 /* VolumeSlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0C40001A0B1C2D3E4F50001 /* VolumeSlider.swift */; };
+		EA0200000000000000000002 /* VolumeHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0100000000000000000001 /* VolumeHUD.swift */; };
+		EA0300000000000000000003 /* VolumeHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0100000000000000000001 /* VolumeHUD.swift */; };
+		EA0500000000000000000005 /* VolumeHUDTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0400000000000000000004 /* VolumeHUDTests.swift */; };
+		EA0700000000000000000007 /* MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0600000000000000000006 /* MainMenu.swift */; };
+		EA0800000000000000000008 /* MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0600000000000000000006 /* MainMenu.swift */; };
+		EA0A0000000000000000000A /* MainMenuTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0900000000000000000009 /* MainMenuTests.swift */; };
+		EA0C000000000000000000C0 /* SettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0B000000000000000000B0 /* SettingsPane.swift */; };
+		EA0D000000000000000000D0 /* SettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0B000000000000000000B0 /* SettingsPane.swift */; };
+		EA0F000000000000000000F0 /* SettingsPaneTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0E000000000000000000E0 /* SettingsPaneTests.swift */; };
+		EA11000000000000000001B0 /* VolumeMute.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA10000000000000000001A0 /* VolumeMute.swift */; };
+		EA12000000000000000001C0 /* VolumeMute.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA10000000000000000001A0 /* VolumeMute.swift */; };
+		EA14000000000000000001E0 /* VolumeMuteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA13000000000000000001D0 /* VolumeMuteTests.swift */; };
 		E7E50018A0B1C2D3E4F50018 /* UtilsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7E50017A0B1C2D3E4F50017 /* UtilsTests.swift */; };
 		E7E50019A0B1C2D3E4F50019 /* Utils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FC72A1B24F664BA004E10E1 /* Utils.swift */; };
 		E7E5001AA0B1C2D3E4F5001A /* RestoreSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F48E61624FC761C0073123B /* RestoreSettings.swift */; };
@@ -46,6 +59,10 @@
 		D0C10011A0B1C2D3E4F50011 /* DDCProtocol.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C10002A0B1C2D3E4F50002 /* DDCProtocol.mm */; };
 		D0C10012A0B1C2D3E4F50012 /* DDCProtocol.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C10002A0B1C2D3E4F50002 /* DDCProtocol.mm */; };
 		D0C10013A0B1C2D3E4F50013 /* DDCProtocolTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C10003A0B1C2D3E4F50003 /* DDCProtocolTests.mm */; };
+		D0C50011A0B1C2D3E4F50011 /* MediaKeys.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C50002A0B1C2D3E4F50002 /* MediaKeys.mm */; };
+		D0C50012A0B1C2D3E4F50012 /* MediaKeys.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C50002A0B1C2D3E4F50002 /* MediaKeys.mm */; };
+		D0C50013A0B1C2D3E4F50013 /* MediaKeysTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C50003A0B1C2D3E4F50003 /* MediaKeysTests.mm */; };
+		D0C60011A0B1C2D3E4F50011 /* VolumeKeys.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C60002A0B1C2D3E4F50002 /* VolumeKeys.mm */; };
 		D0C20011A0B1C2D3E4F50011 /* DisplayPort.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C20002A0B1C2D3E4F50002 /* DisplayPort.mm */; };
 		D0C20012A0B1C2D3E4F50012 /* DisplayPort.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C20002A0B1C2D3E4F50002 /* DisplayPort.mm */; };
 		D0C30011A0B1C2D3E4F50011 /* DDC.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C30002A0B1C2D3E4F50002 /* DDC.mm */; };
@@ -65,6 +82,7 @@
 		358D565A212DEDED00F9E9BF /* EZAppDelegate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = EZAppDelegate.h; sourceTree = "<group>"; };
 		358D565B212DEDED00F9E9BF /* ResMenuItem.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = ResMenuItem.mm; sourceTree = "<group>"; };
 		358F04E2212D7E6500671ABD /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = System/Library/Frameworks/IOKit.framework; sourceTree = SDKROOT; };
+		D0C60020A0B1C2D3E4F50020 /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
 		35C9D3AB212C04DA00D652F7 /* EZDisplay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EZDisplay.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		35C9D3B1212C04DD00D652F7 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		35C9D3B6212C04DD00D652F7 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -89,8 +107,16 @@
 		C0570009A0B1C2D3E4F50009 /* ColorModeUI.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ColorModeUI.swift; sourceTree = "<group>"; };
 		E7D60001A0B1C2D3E4F50001 /* BrightnessSlider.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BrightnessSlider.swift; sourceTree = "<group>"; };
 		D0C40001A0B1C2D3E4F50001 /* VolumeSlider.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = VolumeSlider.swift; sourceTree = "<group>"; };
+		EA0100000000000000000001 /* VolumeHUD.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = VolumeHUD.swift; sourceTree = "<group>"; };
+		EA0600000000000000000006 /* MainMenu.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MainMenu.swift; sourceTree = "<group>"; };
+		EA0B000000000000000000B0 /* SettingsPane.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SettingsPane.swift; sourceTree = "<group>"; };
 		E7E50011A0B1C2D3E4F50011 /* EZDisplayTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EZDisplayTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E7E50017A0B1C2D3E4F50017 /* UtilsTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = UtilsTests.swift; sourceTree = "<group>"; };
+		EA0400000000000000000004 /* VolumeHUDTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = VolumeHUDTests.swift; sourceTree = "<group>"; };
+		EA0900000000000000000009 /* MainMenuTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MainMenuTests.swift; sourceTree = "<group>"; };
+		EA0E000000000000000000E0 /* SettingsPaneTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SettingsPaneTests.swift; sourceTree = "<group>"; };
+		EA10000000000000000001A0 /* VolumeMute.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = VolumeMute.swift; sourceTree = "<group>"; };
+		EA13000000000000000001D0 /* VolumeMuteTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = VolumeMuteTests.swift; sourceTree = "<group>"; };
 		E7E5001EA0B1C2D3E4F5001E /* RestoreSettingsTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = RestoreSettingsTests.swift; sourceTree = "<group>"; };
 		E7E50023A0B1C2D3E4F50023 /* ResolutionTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ResolutionTests.swift; sourceTree = "<group>"; };
 		E7E50020A0B1C2D3E4F50020 /* ColorModeTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = ColorModeTests.mm; sourceTree = "<group>"; };
@@ -100,6 +126,11 @@
 		D0C10001A0B1C2D3E4F50001 /* DDCProtocol.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DDCProtocol.h; sourceTree = "<group>"; };
 		D0C10002A0B1C2D3E4F50002 /* DDCProtocol.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = DDCProtocol.mm; sourceTree = "<group>"; };
 		D0C10003A0B1C2D3E4F50003 /* DDCProtocolTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = DDCProtocolTests.mm; sourceTree = "<group>"; };
+		D0C50001A0B1C2D3E4F50001 /* MediaKeys.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MediaKeys.h; sourceTree = "<group>"; };
+		D0C50002A0B1C2D3E4F50002 /* MediaKeys.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = MediaKeys.mm; sourceTree = "<group>"; };
+		D0C50003A0B1C2D3E4F50003 /* MediaKeysTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = MediaKeysTests.mm; sourceTree = "<group>"; };
+		D0C60001A0B1C2D3E4F50001 /* VolumeKeys.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = VolumeKeys.h; sourceTree = "<group>"; };
+		D0C60002A0B1C2D3E4F50002 /* VolumeKeys.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = VolumeKeys.mm; sourceTree = "<group>"; };
 		D0C20001A0B1C2D3E4F50001 /* DisplayPort.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DisplayPort.h; sourceTree = "<group>"; };
 		D0C20002A0B1C2D3E4F50002 /* DisplayPort.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = DisplayPort.mm; sourceTree = "<group>"; };
 		D0C30001A0B1C2D3E4F50001 /* DDC.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DDC.h; sourceTree = "<group>"; };
@@ -112,6 +143,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				358F04E3212D7E6500671ABD /* IOKit.framework in Frameworks */,
+				D0C60021A0B1C2D3E4F50021 /* CoreAudio.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -145,6 +177,7 @@
 			isa = PBXGroup;
 			children = (
 				358F04E2212D7E6500671ABD /* IOKit.framework */,
+				D0C60020A0B1C2D3E4F50020 /* CoreAudio.framework */,
 				35E3DC1621281E3E00B4D66A /* Cocoa.framework */,
 			);
 			name = Frameworks;
@@ -181,12 +214,20 @@
 				C0570009A0B1C2D3E4F50009 /* ColorModeUI.swift */,
 				E7D60001A0B1C2D3E4F50001 /* BrightnessSlider.swift */,
 				D0C40001A0B1C2D3E4F50001 /* VolumeSlider.swift */,
+				EA0100000000000000000001 /* VolumeHUD.swift */,
+				EA0600000000000000000006 /* MainMenu.swift */,
+				EA0B000000000000000000B0 /* SettingsPane.swift */,
+				EA10000000000000000001A0 /* VolumeMute.swift */,
 				A1B20001A0B1C2D3E4F50001 /* CommandPlan.h */,
 				A1B20002A0B1C2D3E4F50002 /* CommandPlan.mm */,
 				D0C30001A0B1C2D3E4F50001 /* DDC.h */,
 				D0C30002A0B1C2D3E4F50002 /* DDC.mm */,
 				D0C10001A0B1C2D3E4F50001 /* DDCProtocol.h */,
 				D0C10002A0B1C2D3E4F50002 /* DDCProtocol.mm */,
+				D0C50001A0B1C2D3E4F50001 /* MediaKeys.h */,
+				D0C50002A0B1C2D3E4F50002 /* MediaKeys.mm */,
+				D0C60001A0B1C2D3E4F50001 /* VolumeKeys.h */,
+				D0C60002A0B1C2D3E4F50002 /* VolumeKeys.mm */,
 				D0C20001A0B1C2D3E4F50001 /* DisplayPort.h */,
 				D0C20002A0B1C2D3E4F50002 /* DisplayPort.mm */,
 				35CC4996212C54AF00704BD7 /* bridging.h */,
@@ -198,11 +239,16 @@
 			isa = PBXGroup;
 			children = (
 				E7E50017A0B1C2D3E4F50017 /* UtilsTests.swift */,
+				EA0400000000000000000004 /* VolumeHUDTests.swift */,
+				EA0900000000000000000009 /* MainMenuTests.swift */,
+				EA0E000000000000000000E0 /* SettingsPaneTests.swift */,
+				EA13000000000000000001D0 /* VolumeMuteTests.swift */,
 				E7E5001EA0B1C2D3E4F5001E /* RestoreSettingsTests.swift */,
 				E7E50023A0B1C2D3E4F50023 /* ResolutionTests.swift */,
 				E7E50020A0B1C2D3E4F50020 /* ColorModeTests.mm */,
 				A1B20003A0B1C2D3E4F50003 /* CommandPlanTests.mm */,
 				D0C10003A0B1C2D3E4F50003 /* DDCProtocolTests.mm */,
+				D0C50003A0B1C2D3E4F50003 /* MediaKeysTests.mm */,
 			);
 			path = tests;
 			sourceTree = "<group>";
@@ -334,10 +380,16 @@
 				C0570019A0B1C2D3E4F50019 /* ColorModeUI.swift in Sources */,
 				E7D60002A0B1C2D3E4F50002 /* BrightnessSlider.swift in Sources */,
 				D0C40002A0B1C2D3E4F50002 /* VolumeSlider.swift in Sources */,
+				EA0200000000000000000002 /* VolumeHUD.swift in Sources */,
+				EA0700000000000000000007 /* MainMenu.swift in Sources */,
+				EA0C000000000000000000C0 /* SettingsPane.swift in Sources */,
+				EA11000000000000000001B0 /* VolumeMute.swift in Sources */,
 				A1B20011A0B1C2D3E4F50011 /* CommandPlan.mm in Sources */,
 				D0C10011A0B1C2D3E4F50011 /* DDCProtocol.mm in Sources */,
 				D0C20011A0B1C2D3E4F50011 /* DisplayPort.mm in Sources */,
 				D0C30011A0B1C2D3E4F50011 /* DDC.mm in Sources */,
+				D0C50011A0B1C2D3E4F50011 /* MediaKeys.mm in Sources */,
+				D0C60011A0B1C2D3E4F50011 /* VolumeKeys.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -360,6 +412,16 @@
 				D0C10013A0B1C2D3E4F50013 /* DDCProtocolTests.mm in Sources */,
 				D0C20012A0B1C2D3E4F50012 /* DisplayPort.mm in Sources */,
 				D0C30012A0B1C2D3E4F50012 /* DDC.mm in Sources */,
+				D0C50012A0B1C2D3E4F50012 /* MediaKeys.mm in Sources */,
+				D0C50013A0B1C2D3E4F50013 /* MediaKeysTests.mm in Sources */,
+				EA0300000000000000000003 /* VolumeHUD.swift in Sources */,
+				EA0500000000000000000005 /* VolumeHUDTests.swift in Sources */,
+				EA0800000000000000000008 /* MainMenu.swift in Sources */,
+				EA0A0000000000000000000A /* MainMenuTests.swift in Sources */,
+				EA0D000000000000000000D0 /* SettingsPane.swift in Sources */,
+				EA0F000000000000000000F0 /* SettingsPaneTests.swift in Sources */,
+				EA12000000000000000001C0 /* VolumeMute.swift in Sources */,
+				EA14000000000000000001E0 /* VolumeMuteTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

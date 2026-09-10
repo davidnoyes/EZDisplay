@@ -5,6 +5,7 @@
 
 #import <IOKit/IOKitLib.h>
 #import <dlfcn.h>
+#import <os/lock.h>
 #import <unistd.h>
 
 #import "DDC.h"
@@ -202,12 +203,48 @@ static IOAVServiceRef CopyServiceForDisplay(CGDirectDisplayID display)
     return chosen;
 }
 
+#pragma mark - The bus queue
+
+/// The one queue every DDC exchange runs on, for every display.
+///
+/// Serial and global rather than one per display, for two separate reasons.
+/// Displays on the same Mac do not necessarily have independent I2C buses, so
+/// overlapping exchanges can interleave into each other's replies; and the
+/// caches below are plain dictionaries, so a background write and a menu being
+/// built would otherwise race on them.
+///
+/// Everything public either runs its body here with `dispatch_sync`, which is
+/// what the callers already did by being on the main thread, or posts to it and
+/// returns. The static functions in this file assume they are already on it and
+/// must never dispatch to it themselves.
+static dispatch_queue_t BusQueue(void)
+{
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("uk.noyes.ezdisplay.ddc", DISPATCH_QUEUE_SERIAL);
+    });
+    return queue;
+}
+
 #pragma mark - Caches
 
 // Both are keyed by display ID and both are dropped wholesale on
 // reconfiguration, because after one a port may hold a different monitor.
 static NSMutableDictionary<NSNumber *, id> *gServices;  // NSNull once looked for and absent
 static NSMutableDictionary<NSNumber *, NSNumber *> *gRanges;  // 0 once known unsupported
+
+// The newest value asked for, and the last one sent to the display, per display
+// and code. See `EZDDCNextWrite` for what a queued write does with the pair.
+//
+// These are the one thing here not owned by the bus queue, and deliberately: a
+// mailbox update has to overtake the writes it supersedes, and one posted to
+// the bus queue would instead queue behind them and arrive too late to
+// supersede anything. So they take a lock, which is held for a dictionary
+// access and never across an exchange.
+static NSMutableDictionary<NSNumber *, NSNumber *> *gWanted;
+static NSMutableDictionary<NSNumber *, NSNumber *> *gWritten;
+static os_unfair_lock gMailboxLock = OS_UNFAIR_LOCK_INIT;
 
 static IOAVServiceRef ServiceForDisplay(CGDirectDisplayID display)
 {
@@ -318,6 +355,21 @@ static BOOL WriteAndVerify(CGDirectDisplayID display, uint8_t vcp, uint16_t valu
     return EZDDCWriteTookEffect((int) value, after, maximum);
 }
 
+/// A volume percentage on the display's own scale, written and verified.
+///
+/// Shared by the blocking setter and the coalesced one so the two cannot drift
+/// apart on the conversion, which is the step where a percentage meets a dial
+/// that might run to 64 or 255.
+static BOOL WriteVolume(CGDirectDisplayID display, int percent)
+{
+    const int maximum = MaximumFor(display, EZVCPSpeakerVolume);
+    if (maximum <= 0)
+        return NO;
+
+    const int raw = EZDDCVolumeRawFromPercent(percent, maximum);
+    return WriteAndVerify(display, EZVCPSpeakerVolume, (uint16_t) raw);
+}
+
 #pragma mark - EZDisplayAudio
 
 @implementation EZDisplayAudio
@@ -330,64 +382,165 @@ static BOOL WriteAndVerify(CGDirectDisplayID display, uint8_t vcp, uint16_t valu
 
 + (BOOL) availableForDisplay: (CGDirectDisplayID) display
 {
-    return MaximumFor(display, EZVCPSpeakerVolume) > 0;
+    __block BOOL available = NO;
+    dispatch_sync(BusQueue(), ^{
+        available = MaximumFor(display, EZVCPSpeakerVolume) > 0;
+    });
+    return available;
 }
 
 + (NSInteger) percentForDisplay: (CGDirectDisplayID) display
 {
-    const int maximum = MaximumFor(display, EZVCPSpeakerVolume);
-    if (maximum <= 0)
-        return -1;
+    __block NSInteger percent = -1;
+    dispatch_sync(BusQueue(), ^{
+        const int maximum = MaximumFor(display, EZVCPSpeakerVolume);
+        if (maximum <= 0)
+            return;
 
-    const int raw = CurrentFor(display, EZVCPSpeakerVolume);
-    if (raw < 0)
-        return -1;
+        const int raw = CurrentFor(display, EZVCPSpeakerVolume);
+        if (raw < 0)
+            return;
 
-    return EZDDCPercentFromRaw(raw, maximum);
+        percent = EZDDCPercentFromRaw(raw, maximum);
+    });
+    return percent;
 }
 
 + (BOOL) setPercent: (NSInteger) percent forDisplay: (CGDirectDisplayID) display
 {
-    const int maximum = MaximumFor(display, EZVCPSpeakerVolume);
-    if (maximum <= 0)
-        return NO;
+    __block BOOL applied = NO;
+    dispatch_sync(BusQueue(), ^{
+        applied = WriteVolume(display, (int) percent);
+    });
+    return applied;
+}
 
-    const int raw = EZDDCVolumeRawFromPercent((int) percent, maximum);
-    return WriteAndVerify(display, EZVCPSpeakerVolume, (uint16_t) raw);
++ (void) setPercentCoalesced: (NSInteger) percent
+                  forDisplay: (CGDirectDisplayID) display
+                  completion: (void (^)(BOOL applied)) completion
+{
+    NSNumber *key = RangeKey(display, EZVCPSpeakerVolume);
+
+    // Recorded here, on the caller's thread, so it is in the mailbox before any
+    // work item posted earlier has had its turn. That ordering is the whole
+    // mechanism: see the note on `gWanted`.
+    os_unfair_lock_lock(&gMailboxLock);
+    if (!gWanted)
+        gWanted = [NSMutableDictionary dictionary];
+    gWanted[key] = @((int) percent);
+    os_unfair_lock_unlock(&gMailboxLock);
+
+    dispatch_async(BusQueue(), ^{
+        os_unfair_lock_lock(&gMailboxLock);
+        NSNumber *wanted  = gWanted[key];
+        NSNumber *written = gWritten[key];
+        const EZDDCPendingWrite next =
+            EZDDCNextWrite(wanted  ? wanted.intValue  : EZDDCNoValue,
+                           written ? written.intValue : EZDDCNoValue);
+        // Marked as sent before it is sent, so the items queued behind this one
+        // skip the value rather than each writing it again while it is on the
+        // wire. A write that then fails is corrected by the read-back below.
+        if (next.shouldWrite)
+        {
+            if (!gWritten)
+                gWritten = [NSMutableDictionary dictionary];
+            gWritten[key] = @(next.value);
+        }
+        os_unfair_lock_unlock(&gMailboxLock);
+
+        if (!next.shouldWrite)
+            return;
+
+        const BOOL applied = WriteVolume(display, next.value);
+
+        // The read-back stays even on a slider write. It costs a frame pair the
+        // coalescing has already paid for, and it is the third of the safety
+        // rules in the header — on this queue it costs no responsiveness,
+        // because nothing here is on the main thread.
+        if (!applied)
+        {
+            os_unfair_lock_lock(&gMailboxLock);
+            [gWritten removeObjectForKey: key];
+            os_unfair_lock_unlock(&gMailboxLock);
+        }
+
+        if (completion)
+            dispatch_async(dispatch_get_main_queue(), ^{ completion(applied); });
+    });
 }
 
 + (BOOL) muteAvailableForDisplay: (CGDirectDisplayID) display
 {
-    return MaximumFor(display, EZVCPAudioMute) > 0;
+    __block BOOL available = NO;
+    dispatch_sync(BusQueue(), ^{
+        available = MaximumFor(display, EZVCPAudioMute) > 0;
+    });
+    return available;
 }
 
 + (NSInteger) mutedForDisplay: (CGDirectDisplayID) display
 {
-    if (MaximumFor(display, EZVCPAudioMute) <= 0)
-        return -1;
+    __block NSInteger muted = -1;
+    dispatch_sync(BusQueue(), ^{
+        if (MaximumFor(display, EZVCPAudioMute) <= 0)
+            return;
 
-    const int raw = CurrentFor(display, EZVCPAudioMute);
-    if (raw < 0)
-        return -1;
+        const int raw = CurrentFor(display, EZVCPAudioMute);
+        if (raw < 0)
+            return;
 
-    // Anything that is not the code's own muted value counts as unmuted, so a
-    // display reporting a third value is read as audible rather than as an
-    // error a caller would have to interpret.
-    return raw == EZDDCMuted ? 1 : 0;
+        // Anything that is not the code's own muted value counts as unmuted, so
+        // a display reporting a third value is read as audible rather than as
+        // an error a caller would have to interpret.
+        muted = raw == EZDDCMuted ? 1 : 0;
+    });
+    return muted;
 }
 
-+ (BOOL) setMuted: (BOOL) muted forDisplay: (CGDirectDisplayID) display
+/// The mute write itself, on the bus queue, for both forms of it below.
+static BOOL WriteMute(CGDirectDisplayID display, BOOL muted)
 {
     if (MaximumFor(display, EZVCPAudioMute) <= 0)
         return NO;
 
-    return WriteAndVerify(display, EZVCPAudioMute, muted ? EZDDCMuted : EZDDCUnmuted);
+    return WriteAndVerify(display, EZVCPAudioMute,
+                          muted ? EZDDCMuted : EZDDCUnmuted);
+}
+
++ (BOOL) setMuted: (BOOL) muted forDisplay: (CGDirectDisplayID) display
+{
+    __block BOOL applied = NO;
+    dispatch_sync(BusQueue(), ^{
+        applied = WriteMute(display, muted);
+    });
+    return applied;
+}
+
++ (void) setMuted: (BOOL) muted
+       forDisplay: (CGDirectDisplayID) display
+       completion: (void (^)(BOOL applied)) completion
+{
+    dispatch_async(BusQueue(), ^{
+        const BOOL applied = WriteMute(display, muted);
+        if (completion)
+            dispatch_async(dispatch_get_main_queue(), ^{ completion(applied); });
+    });
 }
 
 + (void) invalidateCaches
 {
-    gServices = nil;
-    gRanges   = nil;
+    dispatch_sync(BusQueue(), ^{
+        gServices = nil;
+        gRanges   = nil;
+    });
+
+    // The mailboxes go too. A value written to the monitor that was on a port
+    // says nothing about the one there now, and leaving it would let the first
+    // write to the new display be skipped as a duplicate.
+    os_unfair_lock_lock(&gMailboxLock);
+    gWanted  = nil;
+    gWritten = nil;
+    os_unfair_lock_unlock(&gMailboxLock);
 }
 
 @end

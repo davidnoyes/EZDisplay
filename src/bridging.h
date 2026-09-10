@@ -14,3 +14,4 @@
 #import "DDC.h"
 #import "DisplayModes.h"
 #import "DisplayServices.h"
+#import "VolumeKeys.h"

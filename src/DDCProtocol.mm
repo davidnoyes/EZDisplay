@@ -157,6 +157,20 @@ int EZDDCRangeToRemember(int cached, const EZDDCReading &reading)
     return EZDDCRangeUnconfirmed;
 }
 
+EZDDCPendingWrite EZDDCNextWrite(int wanted, int lastWritten)
+{
+    EZDDCPendingWrite next;
+
+    if (wanted == EZDDCNoValue)
+        return next;
+    if (wanted == lastWritten)
+        return next;
+
+    next.shouldWrite = true;
+    next.value       = wanted;
+    return next;
+}
+
 int EZDDCRawFromPercent(int percent, int maximum)
 {
     if (maximum <= 0)

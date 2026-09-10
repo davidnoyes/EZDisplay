@@ -173,6 +173,34 @@ inline bool EZDDCRangeIsSettled(int cached) { return cached >= 0; }
 /// deleting it wholesale, which reinstates the bug, left the whole suite green.
 int EZDDCRangeToRemember(int cached, const EZDDCReading &reading);
 
+/// No value: an empty mailbox, or a code nothing has written yet.
+enum { EZDDCNoValue = -1 };
+
+/// What a queued write should do at the moment it runs.
+struct EZDDCPendingWrite {
+    bool shouldWrite = false;
+    int  value       = EZDDCNoValue;
+};
+
+/// Whether a queued write still has work to do, given the newest value asked
+/// for and the last one sent to the display.
+///
+/// A slider drag posts one of these per tick and they drain at the speed of an
+/// I2C bus, which is far slower than a mouse. Replaying them in order would
+/// walk the display through every position the knob passed through, arriving
+/// at the right one seconds late. So a work item carries no value of its own:
+/// it reads the mailbox when it runs and writes whatever is newest, which
+/// makes the ones that never got their turn free to skip.
+///
+/// The comparison against `lastWritten` is what collapses the tail. Once the
+/// knob stops, every item still queued finds the mailbox holding what was just
+/// written and does nothing.
+///
+/// Coalescing here rather than behind a timer is deliberate: a timer that
+/// fires on the main thread puts the bus round trip in front of the next
+/// redraw, and this does not.
+EZDDCPendingWrite EZDDCNextWrite(int wanted, int lastWritten);
+
 /// A percentage as a raw value on a dial running from 0 to `maximum`.
 ///
 /// Never assume 100. The reply carries the display's own maximum and panels
