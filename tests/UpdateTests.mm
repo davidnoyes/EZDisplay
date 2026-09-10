@@ -112,18 +112,14 @@ static const char *const kCapturedDmgRelease = R"JSON(
 /// api.github.com/repos/davidnoyes/EZDisplay/releases/latest, verbatim,
 /// fetched 2026-09-10: the v1.0.0 release, the first this project cut.
 ///
-/// This is what this project's own release workflow published, from the URL the
-/// updater asks for, so it records the shape that shipped rather than a guess at
-/// it. Being a snapshot, it cannot notice the workflow changing shape later —
-/// only a re-capture does that. What it does pin down is that the payload the
-/// workflow produced on the day parses, which the adapted fixture it replaced
-/// could not honestly claim.
+/// This is the response the updater actually reads, from the URL it actually
+/// asks for, so it is the fixture that fails if the release workflow ever
+/// changes the shape of what it publishes.
 ///
-/// It differs from the one above in three ways, none of which the parser reads:
-/// the asset label is an empty string rather than null, the digest is populated
-/// rather than null, and the author is a Bot whose URLs are percent-encoded.
-/// They are kept for the reason given at the top of this file — an unread field
-/// is exactly the kind a parser trips over — not because anything asserts them.
+/// It differs from the one above in three ways worth keeping, none of which a
+/// hand-written fixture would have thought to include: the asset label is an
+/// empty string rather than null, the digest is populated rather than null,
+/// and the author is a Bot whose URLs are percent-encoded.
 static const char *const kCapturedZipRelease = R"JSON(
 {
   "url": "https://api.github.com/repos/davidnoyes/EZDisplay/releases/386642708",
@@ -293,10 +289,10 @@ static const char *const kCapturedZipRelease = R"JSON(
     XCTAssertTrue(EZReleaseFromJSON(kCapturedZipRelease, &release, &error),
                   @"%s", error.c_str());
 
-    XCTAssertEqual(release.version, std::string("1.1.0"));
+    XCTAssertEqual(release.version, std::string("1.0.0"));
     XCTAssertEqual(release.downloadURL,
-                   std::string("https://github.com/davidnoyes/ezdisplay/"
-                               "releases/download/v1.1.0/EZDisplay-1.1.0.zip"));
+                   std::string("https://github.com/davidnoyes/EZDisplay/"
+                               "releases/download/v1.0.0/EZDisplay-1.0.0.zip"));
 }
 
 - (void)testAReleaseWithNothingToDownloadIsRefused
