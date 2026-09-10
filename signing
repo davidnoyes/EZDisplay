@@ -92,6 +92,18 @@ fingerprint() {
         awk '{ print $2; exit }'
 }
 
+# Whether a certificate of that name is in the keychain at all, valid or not.
+#
+# Separate from `fingerprint` because -v hides an identity that is expired or
+# untrusted, and the two questions have opposite answers in exactly the cases
+# that matter. "Can this sign?" is `fingerprint`. "Would creating another one
+# collide with this?" is this, and asking the first would let `create` mint a
+# second certificate of the same name the day the first expires — an accidental
+# replacement of the app's identity, which `create` exists to refuse.
+identity_present() {
+    security find-certificate -c "$IDENTITY" >/dev/null 2>&1
+}
+
 # Puts a .p12 into the login keychain and trusts it for signing code.
 #
 # Importing alone is not enough: an untrusted certificate is not a valid
@@ -100,11 +112,15 @@ fingerprint() {
 # than the system one, so it needs no administrator password and changes
 # nothing for any other account on the machine.
 install_p12() {
-    local p12="$1" password="$2" keychain="$3"
+    local p12="$1" keychain="$2"
 
     make_work || return 1
 
-    if ! security import "$p12" -k "$keychain" -P "$password" \
+    # `security import` takes the password on the command line or not at all,
+    # and a command line is readable by every account on the machine for as long
+    # as the process runs. Nothing can be done about that one; the openssl calls
+    # below take it from the environment instead, which is not.
+    if ! security import "$p12" -k "$keychain" -P "$EZ_P12_PASSWORD" \
                          -T /usr/bin/codesign -T /usr/bin/security >/dev/null
     then
         echo "Could not import the certificate. Wrong password, or a damaged file." >&2
@@ -112,7 +128,7 @@ install_p12() {
     fi
 
     # add-trusted-cert wants the certificate on its own, not the pair.
-    if ! openssl pkcs12 -in "$p12" -clcerts -nokeys -passin "pass:${password}" \
+    if ! openssl pkcs12 -in "$p12" -clcerts -nokeys -passin env:EZ_P12_PASSWORD \
                         -out "${WORK}/trust.pem" 2>/dev/null
     then
         echo "The certificate imported but could not be read back to trust it." >&2
@@ -138,6 +154,12 @@ install_p12() {
     echo "Choose \"Always Allow\" and it will not ask again."
 }
 
+# The password protecting the .p12, passed to openssl through the environment
+# rather than as an argument. Exported here so `set -u` cannot trip over it, and
+# so every reader of this file can see that it is deliberately global rather
+# than threaded through as a parameter.
+export EZ_P12_PASSWORD=""
+
 # Asks twice, and refuses an empty answer, because this password is the only
 # thing protecting a private key in a file.
 read_new_password() {
@@ -156,30 +178,40 @@ read_new_password() {
         return 1
     fi
 
-    printf '%s' "$first"
+    EZ_P12_PASSWORD="$first"
 }
 
 cmd_create() {
-    local target="${1:-}" password
+    local target="${1:-}"
 
     # Empty rather than absent, because the dispatch below always passes an
     # argument.
     [[ -z $target ]] && target="$DEFAULT_BACKUP"
 
-    if [[ -n $(fingerprint) ]]; then
+    if identity_present; then
         cat >&2 <<EOF
 "${IDENTITY}" already exists, so nothing was done.
 
 Creating a second one would replace the app's identity: every user would have
 to grant Accessibility again, and \`brew upgrade\` would warn that the signer
 had changed. To see the one you have, run: ./signing show
+
+If you do mean to replace it — because it has expired, or because the private
+key is lost — delete it in Keychain Access first, then run this again and
+expect that re-grant.
 EOF
         return 1
     fi
 
     # A .p12 holds the private key, so one committed by accident is the identity
     # given away. .gitignore is a guard, not a guarantee.
-    if [[ $(cd "$(dirname "$target")" 2>/dev/null && pwd) == "$PWD"* ]]; then
+    #
+    # Compared with a separator on both ends, because a bare prefix test makes a
+    # sibling directory whose name merely starts the same way — ezdisplay-backups
+    # next to ezdisplay — look like somewhere inside the project. Physical paths
+    # on both sides, so a symlink outside the project pointing into it is not a
+    # way round this.
+    if [[ "$(cd "$(dirname "$target")" 2>/dev/null && pwd -P)/" == "$(pwd -P)/"* ]]; then
         echo "Refusing to save inside the project. Choose a path outside it." >&2
         return 1
     fi
@@ -189,7 +221,7 @@ EOF
         return 1
     fi
 
-    password=$(read_new_password) || return 1
+    read_new_password || return 1
 
     make_work || return 1
 
@@ -215,7 +247,7 @@ EOF
                         -inkey "${WORK}/key.pem" -in "${WORK}/cert.pem" \
                         -name "$IDENTITY" \
                         -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES \
-                        -macalg sha1 -passout "pass:${password}" 2>/dev/null
+                        -macalg sha1 -passout env:EZ_P12_PASSWORD 2>/dev/null
     then
         echo "Could not save the certificate. Nothing was installed." >&2
         rm -f "$target"
@@ -227,7 +259,7 @@ EOF
 
     # Saved before installing, so there is no window in which the identity
     # exists and no copy of it does.
-    if ! install_p12 "$target" "$password" "$(login_keychain)"; then
+    if ! install_p12 "$target" "$(login_keychain)"; then
         echo "The copy at ${target} is good; only the keychain step failed." >&2
         return 1
     fi
@@ -258,25 +290,43 @@ To put it on another machine, copy the file there and run:
 EOF
 }
 
+# Read out of the keychain rather than assumed, so this reports the certificate
+# that is actually there.
+cert_dates() {
+    security find-certificate -c "$IDENTITY" -p |
+        openssl x509 -noout -dates |
+        sed -e 's/^notBefore=/Created:     /' -e 's/^notAfter=/Expires:     /'
+}
+
 cmd_show() {
     local print
 
     print=$(fingerprint)
 
+    # Present but not valid is the case worth naming. It is what an expired
+    # certificate looks like, and left unexplained it looks identical to never
+    # having created one — while `run` and `install` quietly go back to ad-hoc
+    # and the volume keys start needing a re-grant every build again.
     if [[ -z $print ]]; then
-        echo "\"${IDENTITY}\" is not installed. Builds are signed ad-hoc."
-        echo "To create it: ./signing create"
+        if identity_present; then
+            echo "\"${IDENTITY}\" is in the keychain but is not a valid signing"
+            echo "identity, so builds are signed ad-hoc. Either it has expired or"
+            echo "its trust setting has gone."
+            cert_dates
+            echo
+            echo "Replacing it costs every user an Accessibility re-grant, and there"
+            echo "is no way to renew it in place. Delete it in Keychain Access, run"
+            echo "./signing create, and expect that re-grant."
+        else
+            echo "\"${IDENTITY}\" is not installed. Builds are signed ad-hoc."
+            echo "To create it: ./signing create"
+        fi
         return 1
     fi
 
     echo "Identity:    ${IDENTITY}"
     echo "Fingerprint: ${print}"
-
-    # Read out of the keychain rather than assumed, so this reports the
-    # certificate that is actually there.
-    security find-certificate -c "$IDENTITY" -p |
-        openssl x509 -noout -dates |
-        sed -e 's/^notBefore=/Created:     /' -e 's/^notAfter=/Expires:     /'
+    cert_dates
 
     # The only honest way to show the designated requirement is to read it off
     # something signed, so show it when there is a build to read it from.
@@ -293,7 +343,7 @@ cmd_show() {
 }
 
 cmd_restore() {
-    local source="${1:-}" password
+    local source="${1:-}"
 
     if [[ -z $source ]]; then
         echo "Usage: signing restore PATH" >&2
@@ -305,15 +355,15 @@ cmd_restore() {
         return 1
     fi
 
-    if [[ -n $(fingerprint) ]]; then
-        echo "\"${IDENTITY}\" is already installed, fingerprint $(fingerprint)." >&2
+    if identity_present; then
+        echo "\"${IDENTITY}\" is already installed. To see it: ./signing show" >&2
         echo "Remove it in Keychain Access first if you mean to replace it." >&2
         return 1
     fi
 
-    read -r -s -p "Password for ${source}: " password; echo
+    read -r -s -p "Password for ${source}: " EZ_P12_PASSWORD; echo
 
-    install_p12 "$source" "$password" "$(login_keychain)" || return 1
+    install_p12 "$source" "$(login_keychain)" || return 1
 
     if [[ -z $(fingerprint) ]]; then
         echo "The certificate imported but is not a valid signing identity." >&2

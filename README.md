@@ -109,6 +109,26 @@ Compare the fingerprint it prints against the one from the first machine. The
 same fingerprint means the same identity, so builds from either machine are
 interchangeable.
 
+Once you have a certificate, build with `./run` or `./install` rather than with
+Xcode's own **Build and Run**. The certificate is named on the `xcodebuild`
+command line rather than stored in the project, so that a clone without one
+still builds. Xcode's own build signs with a code hash instead, and says
+nothing about having voided the Accessibility grant.
+
+If you lose the file while the certificate is still in your login keychain, you
+can write a fresh copy. Open **Keychain Access**, select **EZDisplay Self
+Signed**, then choose **File > Export Items**. Do that before you move to
+another machine or reset the keychain: once both copies are gone, so is the
+identity.
+
+The certificate lasts ten years. Expiry costs nothing to copies of EZDisplay
+that are already installed, because the requirement matches a fingerprint
+rather than checking validity. It does stop you signing new builds, which
+`./signing show` reports rather than leaving you to guess. Renewing in place is
+not possible. Delete the certificate in **Keychain Access**, run
+`./signing create` again, and accept that everyone grants Accessibility one
+more time.
+
 The certificate is not an Apple one, so it does nothing for Gatekeeper: it
 carries no authority, and no other machine trusts it. Only notarization does
 that, and only through the paid Apple Developer Program.
