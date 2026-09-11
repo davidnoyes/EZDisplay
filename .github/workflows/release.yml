@@ -41,6 +41,25 @@ jobs:
       # carried across as a string.
       HAS_TAP_APP: ${{ secrets.HOMEBREW_TAP_APP_CLIENT_ID != '' }}
 
+      # The designated requirement every published build has to have, written
+      # down rather than derived, because the whole point is to notice when the
+      # build stops matching it.
+      #
+      # The updater holds a download to the requirement of the copy already
+      # running — it reads that with SecCodeCopyDesignatedRequirement rather
+      # than from any constant — so this string is what every install out there
+      # is already pinned to, and a build that does not match it is a build
+      # they will all refuse. Nothing else in this job can see that: the
+      # signature would be valid, the archive would unpack, and the release
+      # would publish to an audience that could not take it.
+      #
+      # So this changes only when the certificate is deliberately replaced, and
+      # replacing it costs every user a reinstall and a fresh Accessibility
+      # grant. Read the new value off the built app rather than guessing it:
+      #
+      #     codesign -d -r- EZDisplay.app 2>&1 | sed -n -e 's/^.*designated => //p'
+      EXPECTED_REQUIREMENT: 'identifier "io.github.davidnoyes.ezdisplay" and certificate leaf = H"8a3571a0dec49bf8587e4434369ae3da70f6e21c"'
+
     steps:
       # Pinned to a commit rather than to v7, and the same below. A tag is
       # mutable: whoever owns the action can move it, and in March 2025 that is
@@ -171,14 +190,33 @@ jobs:
                         sed -n -e 's/^#* *designated => //p')
           echo "Designated requirement: ${requirement}"
 
-          case "$requirement" in
-            *"certificate leaf"*) ;;
-            *)
-              echo "::error::This build is not signed by the certificate, so it would"
-              echo "::error::void every user's Accessibility grant. Nothing was published."
-              exit 1
-              ;;
-          esac
+          # Exact, rather than a test for the words "certificate leaf". That
+          # test only asks whether some certificate signed this, and a reissued
+          # or rotated one passes it while producing a requirement no existing
+          # install satisfies — which is the failure worth catching, because it
+          # is silent everywhere else.
+          if [[ $requirement != "$EXPECTED_REQUIREMENT" ]]; then
+            echo "::error::The designated requirement is not the published one."
+            echo "::error::  expected: ${EXPECTED_REQUIREMENT}"
+            echo "::error::  built:    ${requirement}"
+
+            case "$requirement" in
+              *"certificate leaf"*)
+                echo "::error::This is a different certificate. Every install would"
+                echo "::error::refuse the update and need a reinstall and a fresh"
+                echo "::error::Accessibility grant. If the certificate was replaced"
+                echo "::error::on purpose, change EXPECTED_REQUIREMENT to match."
+                ;;
+              *)
+                echo "::error::This build is not signed by a certificate at all, so"
+                echo "::error::it would void every user's Accessibility grant. Check"
+                echo "::error::the signing secrets reached the keychain."
+                ;;
+            esac
+
+            echo "::error::Nothing was published."
+            exit 1
+          fi
 
           built=$(defaults read "$PWD/${app}/Contents/Info" CFBundleShortVersionString)
 
@@ -213,15 +251,20 @@ jobs:
                     sed -n -e 's/^#* *designated => //p')
           echo "Designated requirement, unpacked: ${shipped}"
 
-          case "$shipped" in
-            *"certificate leaf"*) ;;
-            *)
-              echo "::error::The archive unpacks to an app that is not signed by"
-              echo "::error::the certificate, so every existing install would refuse"
-              echo "::error::this update. Nothing was published."
-              exit 1
-              ;;
-          esac
+          # Against the same expected value, not merely against the app that
+          # went in. The step before this one has already matched that value
+          # exactly, so a difference here can only have been introduced by the
+          # round trip, and the archive is what everyone downloads.
+          if [[ $shipped != "$EXPECTED_REQUIREMENT" ]]; then
+            echo "::error::The archive unpacks to an app whose designated"
+            echo "::error::requirement is not the published one, so every existing"
+            echo "::error::install would refuse this update."
+            echo "::error::  expected: ${EXPECTED_REQUIREMENT}"
+            echo "::error::  unpacked: ${shipped}"
+            echo "::error::The build itself matched, so the archiving changed it."
+            echo "::error::Nothing was published."
+            exit 1
+          fi
 
           rm -rf "$unpacked"
 
