@@ -235,6 +235,36 @@ std::string EZUpdateStatusForHTTPCode(int code)
     return "GitHub answered " + std::to_string(code) + ".";
 }
 
+
+EZUpdateDecision EZDecideUpdate(int httpCode, const std::string &body,
+                                const std::string &currentVersion)
+{
+    EZUpdateDecision decision;
+    decision.updateAvailable = false;
+
+    // The code first, and the body only if the code says it is worth reading.
+    // GitHub answers a rate limit with a body that parses perfectly well, and
+    // reading that one would offer whatever release it happened to describe.
+    decision.status = EZUpdateStatusForHTTPCode(httpCode);
+    if (!decision.status.empty())
+        return decision;
+
+    // The reason a release cannot be read is what the About box shows, so it is
+    // written straight into the sentence rather than into a variable that would
+    // only be copied there.
+    EZRelease release;
+    if (!EZReleaseFromJSON(body, &release, &decision.status))
+        return decision;
+
+    decision.version = release.version;
+    decision.downloadURL = release.downloadURL;
+    decision.status = EZUpdateStatusText(currentVersion, release.version);
+    decision.updateAvailable =
+        EZCompareVersions(currentVersion, release.version) < 0;
+
+    return decision;
+}
+
 #pragma mark - Asking GitHub
 
 // The releases of this repository, by the name the remote uses. Case matters
@@ -329,33 +359,20 @@ static const NSTimeInterval kCheckTimeout = 15.0;
         }
 
         NSInteger code = [(NSHTTPURLResponse *) response statusCode];
-        std::string refusal = EZUpdateStatusForHTTPCode((int) code);
-
-        if (!refusal.empty()) {
-            finish([EZUpdateCheck failedWith:
-                [NSString stringWithUTF8String:refusal.c_str()]]);
-            return;
-        }
-
-        EZRelease release;
-        std::string reason;
         std::string body((const char *) data.bytes, data.length);
 
-        if (!EZReleaseFromJSON(body, &release, &reason)) {
-            finish([EZUpdateCheck failedWith:
-                [NSString stringWithUTF8String:reason.c_str()]]);
-            return;
-        }
+        EZUpdateDecision decision = EZDecideUpdate(
+            (int) code, body, [[self currentVersion] UTF8String]);
 
-        std::string current = [[self currentVersion] UTF8String];
-
+        // A decision that could not read a release leaves both of these empty,
+        // and the property says nil rather than empty for that case.
         EZUpdateCheck *check = [[EZUpdateCheck alloc] init];
-        check.status = [NSString stringWithUTF8String:
-            EZUpdateStatusText(current, release.version).c_str()];
-        check.version = [NSString stringWithUTF8String:release.version.c_str()];
-        check.downloadURL =
-            [NSString stringWithUTF8String:release.downloadURL.c_str()];
-        check.updateAvailable = EZCompareVersions(current, release.version) < 0;
+        check.status = [NSString stringWithUTF8String:decision.status.c_str()];
+        check.version = decision.version.empty() ? nil :
+            [NSString stringWithUTF8String:decision.version.c_str()];
+        check.downloadURL = decision.downloadURL.empty() ? nil :
+            [NSString stringWithUTF8String:decision.downloadURL.c_str()];
+        check.updateAvailable = decision.updateAvailable;
 
         finish(check);
     }];

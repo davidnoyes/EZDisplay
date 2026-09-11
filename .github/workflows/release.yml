@@ -204,6 +204,7 @@ jobs:
 
           shipped=$(codesign -d -r- "${unpacked}/EZDisplay.app" 2>&1 |
                     sed -n -e 's/^#* *designated => //p')
+          echo "Designated requirement, unpacked: ${shipped}"
 
           case "$shipped" in
             *"certificate leaf"*) ;;

@@ -73,6 +73,29 @@ std::string EZUpdateStatusText(const std::string &current,
 /// else says what the code was, which is the only thing that would help.
 std::string EZUpdateStatusForHTTPCode(int code);
 
+/// Everything one answer from GitHub decides.
+struct EZUpdateDecision {
+    /// A sentence to show, whatever happened. Never empty.
+    std::string status;
+    /// The release, when the answer could be read. Both empty when it could not.
+    std::string version;
+    std::string downloadURL;
+    bool updateAvailable;
+};
+
+/// The whole of what a check decides between GitHub answering and the About box
+/// being told: the status code read, the body parsed, the release compared
+/// against this build, and the wording chosen.
+///
+/// Separate from `checkWithCompletion:` so that the sequence is the thing a
+/// test runs, rather than something a test has to imitate. The four functions
+/// above are each correct on their own, and the order they are called in is a
+/// decision of its own — reading the body before the status code would offer an
+/// update out of a rate-limit response — so it belongs somewhere it can be held
+/// to. Only the network stays behind the facade.
+EZUpdateDecision EZDecideUpdate(int httpCode, const std::string &body,
+                                const std::string &currentVersion);
+
 /// Whether a designated requirement is an ad-hoc signature's.
 ///
 /// An ad-hoc requirement names this exact build's code hash, which no other

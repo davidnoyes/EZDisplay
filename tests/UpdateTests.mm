@@ -397,72 +397,50 @@ static const char *const kCapturedZipRelease = R"JSON(
 
 #pragma mark - The whole decision, end to end
 
-/// Every test above holds one function to its own job. These run the sequence
-/// the About box actually takes — GitHub's answer, parsed, compared against
-/// this build, and turned into a sentence — because three functions each
-/// correct in isolation can still be wired together wrongly, and nothing above
-/// would notice.
+/// Every test above holds one function to its own job. These run the whole
+/// sequence a check makes — GitHub's answer read, parsed, compared against this
+/// build, and turned into a sentence — because four functions each correct in
+/// isolation can still be called in the wrong order, and nothing above would
+/// notice. `EZDecideUpdate` is that sequence, so these run the real one rather
+/// than a copy of it kept in step by hand.
 @interface UpdateDecisionPathTests : XCTestCase
 @end
 
 @implementation UpdateDecisionPathTests
 
-/// The path, with the network taken out of it: what `checkWithCompletion:`
-/// does between receiving a status code and a body and handing the panel
-/// something to show. Every step is transcribed in the order and the form the
-/// real one uses, down to the direction of the comparison, so that reading the
-/// two side by side is enough to see they agree. `offered` is the decision,
-/// and the return is the sentence.
-static std::string DecisionFor(int httpCode, const std::string &response,
-                               const std::string &current, bool *offered)
-{
-    *offered = false;
-
-    std::string refusal = EZUpdateStatusForHTTPCode(httpCode);
-    if (!refusal.empty()) {
-        return refusal;
-    }
-
-    EZRelease release;
-    std::string reason;
-
-    if (!EZReleaseFromJSON(response, &release, &reason)) {
-        return reason;
-    }
-
-    *offered = EZCompareVersions(current, release.version) < 0;
-    return EZUpdateStatusText(current, release.version);
-}
-
 - (void)testAnOlderBuildIsOfferedTheCapturedRelease
 {
-    bool offered = false;
-    std::string text = DecisionFor(200, kCapturedZipRelease, "0.9.0", &offered);
+    EZUpdateDecision decision = EZDecideUpdate(200, kCapturedZipRelease, "0.9.0");
 
-    XCTAssertTrue(offered, @"1.0.0 was not offered to a 0.9.0 build");
-    XCTAssertTrue(text.find("1.0.0") != std::string::npos,
-                  @"status was: %s", text.c_str());
+    XCTAssertTrue(decision.updateAvailable, @"1.0.0 was not offered to 0.9.0");
+    XCTAssertEqual(decision.version, std::string("1.0.0"));
+    XCTAssertFalse(decision.downloadURL.empty(),
+                   @"an offered update had nothing to download");
+    XCTAssertTrue(decision.status.find("1.0.0") != std::string::npos,
+                  @"status was: %s", decision.status.c_str());
 }
 
 - (void)testTheBuildThatMatchesTheReleaseIsUpToDate
 {
-    bool offered = false;
-    std::string text = DecisionFor(200, kCapturedZipRelease, "1.0.0", &offered);
+    EZUpdateDecision decision = EZDecideUpdate(200, kCapturedZipRelease, "1.0.0");
 
-    XCTAssertFalse(offered);
-    XCTAssertEqual(text, std::string("EZDisplay is up to date."));
+    XCTAssertFalse(decision.updateAvailable);
+    XCTAssertEqual(decision.status, std::string("EZDisplay is up to date."));
+
+    // Read even when there is nothing to offer, because the About box shows the
+    // release it compared against either way.
+    XCTAssertEqual(decision.version, std::string("1.0.0"));
 }
 
 - (void)testADevelopmentBuildIsNotOfferedTheRelease
 {
     // The normal state of the machine this is built on, run the whole way
     // rather than from two bare strings.
-    bool offered = false;
-    std::string text = DecisionFor(200, kCapturedZipRelease, "1.1.0", &offered);
+    EZUpdateDecision decision = EZDecideUpdate(200, kCapturedZipRelease, "1.1.0");
 
-    XCTAssertFalse(offered, @"a 1.1.0 build was offered 1.0.0");
-    XCTAssertTrue(text.find("1.0.0") == std::string::npos,
-                  @"status offered a downgrade: %s", text.c_str());
+    XCTAssertFalse(decision.updateAvailable, @"a 1.1.0 build was offered 1.0.0");
+    XCTAssertEqual(decision.status,
+                   std::string("This build is newer than the latest release."));
 }
 
 - (void)testTenIsOfferedToNineThroughTheWholePath
@@ -479,39 +457,58 @@ static std::string DecisionFor(int httpCode, const std::string &response,
         response.replace(at, 5, "1.10.0");
     }
 
-    bool offered = false;
-    std::string text = DecisionFor(200, response, "1.9.0", &offered);
+    EZUpdateDecision decision = EZDecideUpdate(200, response, "1.9.0");
 
-    XCTAssertTrue(offered, @"1.10.0 was not offered to a 1.9.0 build");
-    XCTAssertTrue(text.find("1.10.0") != std::string::npos,
-                  @"status was: %s", text.c_str());
+    XCTAssertTrue(decision.updateAvailable,
+                  @"1.10.0 was not offered to a 1.9.0 build");
+    XCTAssertTrue(decision.status.find("1.10.0") != std::string::npos,
+                  @"status was: %s", decision.status.c_str());
 }
 
 - (void)testAReleaseWithNothingToDownloadOffersNothingAndSaysWhy
 {
     // A parse failure has to reach the panel as the reason, not as an empty
     // sentence and not as an update the user cannot actually install.
-    bool offered = false;
-    std::string text = DecisionFor(200, kCapturedDmgRelease, "0.9.0", &offered);
+    EZUpdateDecision decision = EZDecideUpdate(200, kCapturedDmgRelease, "0.9.0");
 
-    XCTAssertFalse(offered, @"a release with no installable asset was offered");
-    XCTAssertFalse(text.empty(), @"the panel would have had nothing to show");
-    XCTAssertTrue(text.find("1.0.0") != std::string::npos,
-                  @"the reason should name the release: %s", text.c_str());
+    XCTAssertFalse(decision.updateAvailable,
+                   @"a release with no installable asset was offered");
+    XCTAssertFalse(decision.status.empty(),
+                   @"the panel would have had nothing to show");
+    XCTAssertTrue(decision.status.find("1.0.0") != std::string::npos,
+                  @"the reason should name the release: %s",
+                  decision.status.c_str());
+
+    // Nothing readable, so nothing to carry: the properties these become are
+    // documented as nil when GitHub's answer could not be read.
+    XCTAssertTrue(decision.version.empty());
+    XCTAssertTrue(decision.downloadURL.empty());
 }
 
 - (void)testARefusedRequestNeverReachesTheBody
 {
     // GitHub answers a rate limit with a 403 and a body that parses perfectly
     // well, so a path that read the body before the status code would offer
-    // whatever release happened to be in it.
-    bool offered = false;
-    std::string text = DecisionFor(403, kCapturedZipRelease, "0.9.0", &offered);
+    // whatever release happened to be in it. This is the test that holds the
+    // order of the two, which is why it hands over a body worth reading.
+    EZUpdateDecision decision = EZDecideUpdate(403, kCapturedZipRelease, "0.9.0");
 
-    XCTAssertFalse(offered, @"a refused request still offered an update");
-    XCTAssertTrue(text.find("1.0.0") == std::string::npos,
-                  @"the refusal quoted the body it should not have read: %s",
-                  text.c_str());
+    XCTAssertFalse(decision.updateAvailable,
+                   @"a refused request still offered an update");
+    XCTAssertTrue(decision.version.empty(),
+                  @"the refusal read the body it should not have: %s",
+                  decision.version.c_str());
+    XCTAssertEqual(decision.status, std::string("GitHub answered 403."));
+}
+
+- (void)testNothingPublishedYetIsNotReportedAsAFault
+{
+    // The ordinary answer for a repository with no releases, taken the whole
+    // way so that the wording the panel shows is the one chosen for it.
+    EZUpdateDecision decision = EZDecideUpdate(404, "", "1.0.0");
+
+    XCTAssertFalse(decision.updateAvailable);
+    XCTAssertEqual(decision.status, std::string("There are no releases yet."));
 }
 
 @end
