@@ -395,6 +395,127 @@ static const char *const kCapturedZipRelease = R"JSON(
 
 @end
 
+#pragma mark - The whole decision, end to end
+
+/// Every test above holds one function to its own job. These run the sequence
+/// the About box actually takes — GitHub's answer, parsed, compared against
+/// this build, and turned into a sentence — because three functions each
+/// correct in isolation can still be wired together wrongly, and nothing above
+/// would notice.
+@interface UpdateDecisionPathTests : XCTestCase
+@end
+
+@implementation UpdateDecisionPathTests
+
+/// The path, with the network taken out of it: what `checkWithCompletion:`
+/// does between receiving a status code and a body and handing the panel
+/// something to show. Every step is transcribed in the order and the form the
+/// real one uses, down to the direction of the comparison, so that reading the
+/// two side by side is enough to see they agree. `offered` is the decision,
+/// and the return is the sentence.
+static std::string DecisionFor(int httpCode, const std::string &response,
+                               const std::string &current, bool *offered)
+{
+    *offered = false;
+
+    std::string refusal = EZUpdateStatusForHTTPCode(httpCode);
+    if (!refusal.empty()) {
+        return refusal;
+    }
+
+    EZRelease release;
+    std::string reason;
+
+    if (!EZReleaseFromJSON(response, &release, &reason)) {
+        return reason;
+    }
+
+    *offered = EZCompareVersions(current, release.version) < 0;
+    return EZUpdateStatusText(current, release.version);
+}
+
+- (void)testAnOlderBuildIsOfferedTheCapturedRelease
+{
+    bool offered = false;
+    std::string text = DecisionFor(200, kCapturedZipRelease, "0.9.0", &offered);
+
+    XCTAssertTrue(offered, @"1.0.0 was not offered to a 0.9.0 build");
+    XCTAssertTrue(text.find("1.0.0") != std::string::npos,
+                  @"status was: %s", text.c_str());
+}
+
+- (void)testTheBuildThatMatchesTheReleaseIsUpToDate
+{
+    bool offered = false;
+    std::string text = DecisionFor(200, kCapturedZipRelease, "1.0.0", &offered);
+
+    XCTAssertFalse(offered);
+    XCTAssertEqual(text, std::string("EZDisplay is up to date."));
+}
+
+- (void)testADevelopmentBuildIsNotOfferedTheRelease
+{
+    // The normal state of the machine this is built on, run the whole way
+    // rather than from two bare strings.
+    bool offered = false;
+    std::string text = DecisionFor(200, kCapturedZipRelease, "1.1.0", &offered);
+
+    XCTAssertFalse(offered, @"a 1.1.0 build was offered 1.0.0");
+    XCTAssertTrue(text.find("1.0.0") == std::string::npos,
+                  @"status offered a downgrade: %s", text.c_str());
+}
+
+- (void)testTenIsOfferedToNineThroughTheWholePath
+{
+    // The trap the numeric comparison exists for, reached through a real
+    // response instead of two literals: as text 1.10.0 sorts before 1.9.0, so
+    // any part of this path that compared the parsed tag as text would tell a
+    // 1.9.0 build it was current. The tag is substituted rather than captured
+    // because no such release exists to capture.
+    std::string response = kCapturedZipRelease;
+
+    for (size_t at = response.find("1.0.0"); at != std::string::npos;
+         at = response.find("1.0.0", at + 6)) {
+        response.replace(at, 5, "1.10.0");
+    }
+
+    bool offered = false;
+    std::string text = DecisionFor(200, response, "1.9.0", &offered);
+
+    XCTAssertTrue(offered, @"1.10.0 was not offered to a 1.9.0 build");
+    XCTAssertTrue(text.find("1.10.0") != std::string::npos,
+                  @"status was: %s", text.c_str());
+}
+
+- (void)testAReleaseWithNothingToDownloadOffersNothingAndSaysWhy
+{
+    // A parse failure has to reach the panel as the reason, not as an empty
+    // sentence and not as an update the user cannot actually install.
+    bool offered = false;
+    std::string text = DecisionFor(200, kCapturedDmgRelease, "0.9.0", &offered);
+
+    XCTAssertFalse(offered, @"a release with no installable asset was offered");
+    XCTAssertFalse(text.empty(), @"the panel would have had nothing to show");
+    XCTAssertTrue(text.find("1.0.0") != std::string::npos,
+                  @"the reason should name the release: %s", text.c_str());
+}
+
+- (void)testARefusedRequestNeverReachesTheBody
+{
+    // GitHub answers a rate limit with a 403 and a body that parses perfectly
+    // well, so a path that read the body before the status code would offer
+    // whatever release happened to be in it.
+    bool offered = false;
+    std::string text = DecisionFor(403, kCapturedZipRelease, "0.9.0", &offered);
+
+    XCTAssertFalse(offered, @"a refused request still offered an update");
+    XCTAssertTrue(text.find("1.0.0") == std::string::npos,
+                  @"the refusal quoted the body it should not have read: %s",
+                  text.c_str());
+}
+
+@end
+
 #pragma mark - Telling the two signatures apart
 
 @interface AdHocRequirementTests : XCTestCase

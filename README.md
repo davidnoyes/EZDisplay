@@ -40,7 +40,9 @@ display glyph in the menu bar after it launches.
 
 Download `EZDisplay-<version>.zip` from the
 [latest release](https://github.com/davidnoyes/EZDisplay/releases/latest), unzip
-it, and move **EZDisplay.app** to your **Applications** folder.
+it, and move **EZDisplay.app** to your **Applications** folder. On a Mac where
+you cannot write to `/Applications`, the `Applications` folder in your home
+directory works just as well.
 
 macOS refuses the first launch and offers to move the app to the Trash, because
 EZDisplay is signed by its own certificate rather than by an Apple one — which
