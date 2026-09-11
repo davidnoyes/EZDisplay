@@ -39,7 +39,7 @@ jobs:
       # a condition written there is silently never true. A job's `env` can
       # read secrets, and a step's `if` can read `env`, so the answer is
       # carried across as a string.
-      HAS_TAP_APP: ${{ secrets.HOMEBREW_TAP_APP_ID != '' }}
+      HAS_TAP_APP: ${{ secrets.HOMEBREW_TAP_APP_CLIENT_ID != '' }}
 
     steps:
       - uses: actions/checkout@v7
@@ -263,7 +263,10 @@ jobs:
         if: env.HAS_TAP_APP == 'true'
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.HOMEBREW_TAP_APP_ID }}
+          # The Client ID rather than the App ID: `app-id` is deprecated, and
+          # the two are different values, so the guard above has to read the
+          # same secret this does or the step would run without it.
+          client-id: ${{ secrets.HOMEBREW_TAP_APP_CLIENT_ID }}
           private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
           # Narrowed to the tap, so a leaked token cannot reach this repository
           # or any other. The App itself is installed only there as well.
@@ -285,7 +288,7 @@ jobs:
           # the release is already published, so failing here would say the
           # release failed when it did not.
           if [[ -z ${GH_TOKEN:-} ]]; then
-            echo "::notice::HOMEBREW_TAP_APP_ID is not set, so ${tap} was left alone."
+            echo "::notice::HOMEBREW_TAP_APP_CLIENT_ID is not set, so ${tap} was left alone."
             exit 0
           fi
 
