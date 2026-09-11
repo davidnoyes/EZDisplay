@@ -226,6 +226,11 @@ static const char *const kCapturedZipRelease = R"JSON(
     // to everyone running the ninth.
     XCTAssertEqual(EZCompareVersions("1.9.0", "1.10.0"), -1);
     XCTAssertEqual(EZCompareVersions("1.10.0", "1.9.0"), 1);
+
+    // Every position reaches ten eventually, and the loop treats them alike
+    // only for as long as nobody special-cases one of them.
+    XCTAssertEqual(EZCompareVersions("1.0.9", "1.0.10"), -1);
+    XCTAssertEqual(EZCompareVersions("9.0.0", "10.0.0"), -1);
 }
 
 - (void)testAMajorVersionOutranksEverythingBelowIt
