@@ -91,7 +91,7 @@ class AboutWindowController: NSWindowController {
         // well — so it reads as the headline features rather than the manifest.
         let summary = NSTextField(wrappingLabelWithString:
             "Resolution, refresh rate, HDR, color, brightness, and volume "
-            + "for every display — from the menu bar.")
+            + "for every display. All from the menu bar.")
         summary.textColor = .secondaryLabelColor
         holdToColumn(summary)
 
