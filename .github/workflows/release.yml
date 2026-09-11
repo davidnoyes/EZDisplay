@@ -190,6 +190,33 @@ jobs:
                 build/Build/Products/Release/EZDisplay.app \
                 "EZDisplay-${VERSION}.zip"
 
+          # The step above checked the app that went in. This checks the one
+          # that comes back out, because preserving the signature is a claim
+          # about ditto rather than something already proven, and the unpacked
+          # app is what the updater runs its own check against. A round trip
+          # that quietly dropped the signature would publish an archive every
+          # existing install refuses, and nothing before this point would see
+          # it.
+          unpacked=$(mktemp -d)
+          ditto -x -k "EZDisplay-${VERSION}.zip" "$unpacked"
+
+          codesign --verify --strict --deep --verbose=2 "${unpacked}/EZDisplay.app"
+
+          shipped=$(codesign -d -r- "${unpacked}/EZDisplay.app" 2>&1 |
+                    sed -n -e 's/^#* *designated => //p')
+
+          case "$shipped" in
+            *"certificate leaf"*) ;;
+            *)
+              echo "::error::The archive unpacks to an app that is not signed by"
+              echo "::error::the certificate, so every existing install would refuse"
+              echo "::error::this update. Nothing was published."
+              exit 1
+              ;;
+          esac
+
+          rm -rf "$unpacked"
+
           echo "SHA256=$(shasum -a 256 "EZDisplay-${VERSION}.zip" | cut -d' ' -f1)" \
               >> "$GITHUB_ENV"
 
