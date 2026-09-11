@@ -42,7 +42,14 @@ jobs:
       HAS_TAP_APP: ${{ secrets.HOMEBREW_TAP_APP_CLIENT_ID != '' }}
 
     steps:
-      - uses: actions/checkout@v7
+      # Pinned to a commit rather than to v7, and the same below. A tag is
+      # mutable: whoever owns the action can move it, and in March 2025 that is
+      # how tj-actions/changed-files reached 23,000 repositories and printed
+      # their secrets into the logs. This job imports the signing certificate
+      # and its password into a keychain, and that certificate is what the
+      # updater holds every download to — so anyone who reached it could sign
+      # an update that every install would accept. Dependabot moves these.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Check the SDK is new enough
         run: |
@@ -261,7 +268,7 @@ jobs:
       - name: Mint a token for the tap
         id: tap-token
         if: env.HAS_TAP_APP == 'true'
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
         with:
           # The Client ID rather than the App ID: `app-id` is deprecated, and
           # the two are different values, so the guard above has to read the

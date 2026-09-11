@@ -1,0 +1,20 @@
+# Dependabot exists here for one job: keeping the commit-pinned actions in
+# release.yml from going stale.
+#
+# The pins are the point — a tag can be moved by whoever owns the action, and
+# the release job holds the signing certificate — but a pin nobody maintains is
+# just an old version nobody noticed. Dependabot rewrites the sha and the
+# version comment together, so the pin stays honest without anyone watching it.
+#
+# There is nothing else to update. The app links only Apple frameworks and the
+# C++ standard library, and the runner is pinned deliberately in the workflow.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      # Weekly rather than daily: two actions do not change often enough to be
+      # worth a notification most mornings, and a pull request that arrives too
+      # often gets merged without being read, which defeats pinning them.
+      interval: weekly
