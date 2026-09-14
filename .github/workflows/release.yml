@@ -169,7 +169,8 @@ jobs:
           # Overriding it here is also what makes a release tell itself apart
           # from a copy somebody built: the project carries zero, run numbers
           # start at one, and EZBuildLabel reads zero as a dev build. Dropping
-          # this would mark every release one.
+          # this would mark every release a dev build, which is why the step
+          # below reads the number back off the bundle.
           xcodebuild -scheme EZDisplay \
                      -configuration Release \
                      -derivedDataPath build \
@@ -227,6 +228,21 @@ jobs:
 
           if [[ $built != "$VERSION" ]]; then
             echo "::error::The bundle says ${built} but the tag says ${VERSION}."
+            exit 1
+          fi
+
+          # The build number, read back rather than assumed. The project carries
+          # zero and the step above overrides it, so an override that silently
+          # stopped landing — a moved build step, a setting that took precedence
+          # — would publish a release that calls itself a dev build in About and
+          # in `ezdisplay version`. Nothing else would notice: it signs, it
+          # verifies, and it installs.
+          number=$(defaults read "$PWD/${app}/Contents/Info" CFBundleVersion)
+
+          if [[ $number != "$GITHUB_RUN_NUMBER" ]]; then
+            echo "::error::The bundle's build number is ${number}, not this run's"
+            echo "::error::${GITHUB_RUN_NUMBER}. Every copy would call itself a dev"
+            echo "::error::build. Check CURRENT_PROJECT_VERSION reached xcodebuild."
             exit 1
           fi
 

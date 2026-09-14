@@ -206,34 +206,6 @@ std::string EZUpdateAppInArchive(const std::vector<std::string> &entries)
     return found;
 }
 
-/// Whether a build number says this bundle did not come from the release
-/// workflow. The sentinel, and the reason for it, are in EZBuildLabel.
-static bool IsDevBuild(const std::string &build)
-{
-    return build.empty() || build == "0";
-}
-
-std::string EZBuildLabel(const std::string &build, const std::string &built)
-{
-    if (!IsDevBuild(build))
-        return build;
-
-    if (built.empty())
-        return "dev build";
-
-    return "dev build, " + built;
-}
-
-std::string EZAboutVersionText(const std::string &version,
-                               const std::string &build,
-                               const std::string &built)
-{
-    if (!IsDevBuild(build))
-        return "Version " + version;
-
-    return "Version " + version + " (" + EZBuildLabel(build, built) + ")";
-}
-
 std::string EZUpdateStatusText(const std::string &current,
                                const std::string &latest)
 {
@@ -291,6 +263,35 @@ EZUpdateDecision EZDecideUpdate(int httpCode, const std::string &body,
         EZCompareVersions(currentVersion, release.version) < 0;
 
     return decision;
+}
+
+
+/// Whether a build number says this bundle did not come from the release
+/// workflow. The sentinel, and the reason for it, are in EZBuildLabel.
+static bool IsDevBuild(const std::string &build)
+{
+    return build.empty() || build == "0";
+}
+
+std::string EZBuildLabel(const std::string &build, const std::string &built)
+{
+    if (!IsDevBuild(build))
+        return build;
+
+    if (built.empty())
+        return "dev build";
+
+    return "dev build, " + built;
+}
+
+std::string EZAboutVersionText(const std::string &version,
+                               const std::string &build,
+                               const std::string &built)
+{
+    if (!IsDevBuild(build))
+        return "Version " + version;
+
+    return "Version " + version + " (" + EZBuildLabel(build, built) + ")";
 }
 
 #pragma mark - Asking GitHub
@@ -359,9 +360,16 @@ static const NSTimeInterval kCheckTimeout = 15.0;
     NSURL *executable = [[self ownBundle] executableURL];
     NSDate *built = nil;
 
-    if (![executable getResourceValue:&built
-                               forKey:NSURLContentModificationDateKey
-                                error:NULL] || built == nil)
+    [executable getResourceValue:&built
+                          forKey:NSURLContentModificationDateKey
+                           error:NULL];
+
+    return [self buildDateText:built];
+}
+
++ (NSString *)buildDateText:(NSDate *)date
+{
+    if (date == nil)
         return @"";
 
     static NSDateFormatter *formatter = nil;
@@ -373,11 +381,15 @@ static const NSTimeInterval kCheckTimeout = 15.0;
         // against the clock and against the last one they looked at — which a
         // format that does not move is what makes possible. Seconds are in it
         // because two builds a minute apart are an ordinary afternoon.
+        //
+        // No year, for the same reason: the comparison is against a build made
+        // minutes ago. Two a year apart to the day would read alike, which is a
+        // price worth the shorter line.
         formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
         formatter.dateFormat = @"d MMM HH:mm:ss";
     });
 
-    return [formatter stringFromDate:built];
+    return [formatter stringFromDate:date];
 }
 
 + (NSString *)displayVersion

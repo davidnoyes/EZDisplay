@@ -891,9 +891,10 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
 
 - (void)testTheVersionTextCarriesBothNumbers
 {
-    // Two numbers, because they answer different questions. The short version
-    // is what a release is called and what the updater compares; the build is
-    // what tells two builds of the same release apart.
+    // Two parts, because they answer different questions. The short version is
+    // what a release is called and what the updater compares; the label beside
+    // it says which copy of that release this is — a run number here, and for
+    // a build nobody published, what EZBuildLabel wrote instead.
     XCTAssertEqual(EZVersionText("1.2.3", "45"), std::string("ezdisplay 1.2.3 (45)\n"));
 }
 
@@ -906,10 +907,12 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
                    std::string("ezdisplay 1.2.3 (dev build, 14 Sep 18:42:07)\n"));
 }
 
-- (void)testAMissingBuildLeavesOutTheParentheses
+- (void)testAMissingLabelLeavesOutTheParentheses
 {
-    // The build comes from the bundle, so a hand-edited Info.plist can leave it
-    // out. "ezdisplay 1.2.3 ()" would read as a build numbered nothing.
+    // No caller can reach this now: EZBuildLabel answers "dev build" where it
+    // once answered nothing. Kept because "ezdisplay 1.2.3 ()" would read as a
+    // build numbered nothing, and this function has no way to know that the
+    // only thing standing between it and that is a rule in another file.
     XCTAssertEqual(EZVersionText("1.2.3", ""), std::string("ezdisplay 1.2.3\n"));
 }
 

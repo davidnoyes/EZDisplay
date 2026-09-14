@@ -927,8 +927,10 @@ std::string EZUsageText(const std::string &topic)
         {"version",
          "Usage: ezdisplay version\n"
          "\n"
-         "Prints the release this is and the build it was made from, as\n"
-         "\"ezdisplay 1.2.3 (45)\". Also spelled --version and -v.\n"},
+         "Prints the release this is and which copy of it, as\n"
+         "\"ezdisplay 1.2.3 (45)\" for a published build, naming the run that\n"
+         "made it, or \"ezdisplay 1.2.3 (dev build, 4 Sep 09:05:03)\" for one\n"
+         "built from source. Also spelled --version and -v.\n"},
     };
 
     auto found = perCommand.find(topic);
