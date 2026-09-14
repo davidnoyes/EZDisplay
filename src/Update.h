@@ -206,7 +206,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSString *)buildDateText:(nullable NSDate *)date;
 
 /// The version line the About box shows, decided by `EZAboutVersionText` from
-/// the three above.
+/// `currentVersion`, `currentBuild` and `currentBuildDate`.
 + (NSString *)displayVersion;
 
 /// Asks GitHub for the latest release and calls back on the main thread.

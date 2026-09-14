@@ -15,6 +15,7 @@
 
 #import <XCTest/XCTest.h>
 #import "CommandPlan.h"
+#import "Update.h"
 
 #include <string>
 #include <vector>
@@ -872,6 +873,18 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
     std::string usage = EZUsageText("set");
     XCTAssertNotEqual(usage.find("--width"), std::string::npos);
     XCTAssertNotEqual(usage.find("--hz"), std::string::npos);
+}
+
+- (void)testTheVersionHelpQuotesWhatADevBuildActuallyPrints
+{
+    // The help shows an example line, which is the wording copied out of
+    // EZBuildLabel by hand and so can go stale on its own. Asking the function
+    // for it is what keeps the two the same sentence; the date inside it is
+    // pinned separately, by BuildDateTextTests.
+    std::string usage = EZUsageText("version");
+    XCTAssertNotEqual(usage.find(EZBuildLabel("", "4 Sep 09:05:03")),
+                      std::string::npos,
+                      @"the version help no longer says what a dev build says");
 }
 
 - (void)testAnUnknownTopicFallsBackToTheGeneralText

@@ -360,9 +360,15 @@ static const NSTimeInterval kCheckTimeout = 15.0;
     NSURL *executable = [[self ownBundle] executableURL];
     NSDate *built = nil;
 
-    [executable getResourceValue:&built
-                          forKey:NSURLContentModificationDateKey
-                           error:NULL];
+    // The return value, not just the date: `getResourceValue:` documents what
+    // it leaves behind only when it succeeds, so on NO the date is whatever it
+    // happened to be rather than reliably nil. A stale time is worse than none
+    // for the same reason `__DATE__` was rejected, and a garbage one is worse
+    // than both.
+    if (![executable getResourceValue:&built
+                               forKey:NSURLContentModificationDateKey
+                                error:NULL])
+        return @"";
 
     return [self buildDateText:built];
 }
@@ -387,6 +393,11 @@ static const NSTimeInterval kCheckTimeout = 15.0;
         // price worth the shorter line.
         formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
         formatter.dateFormat = @"d MMM HH:mm:ss";
+        // `localTimeZone` tracks the machine's zone; the zone a formatter picks
+        // for itself is captured when it is built. This one is built once and
+        // kept for the life of a process that stays running for weeks, so the
+        // difference is a time read off a clock the reader is no longer on.
+        formatter.timeZone = [NSTimeZone localTimeZone];
     });
 
     return [formatter stringFromDate:date];
