@@ -974,12 +974,13 @@ std::string EZUsageText(const std::string &topic)
 }
 
 
-std::string EZVersionText(const std::string &shortVersion, const std::string &build)
+std::string EZVersionText(const std::string &shortVersion,
+                          const std::string &buildLabel)
 {
-    if (build.empty())
+    if (buildLabel.empty())
         return "ezdisplay " + shortVersion + "\n";
 
-    return "ezdisplay " + shortVersion + " (" + build + ")\n";
+    return "ezdisplay " + shortVersion + " (" + buildLabel + ")\n";
 }
 
 

@@ -165,6 +165,11 @@ jobs:
           # The build number is the workflow run, which rises on its own and
           # says which run produced a given copy. The marketing version is the
           # tag, and is the only one an update compares.
+          #
+          # Overriding it here is also what makes a release tell itself apart
+          # from a copy somebody built: the project carries zero, run numbers
+          # start at one, and EZBuildLabel reads zero as a dev build. Dropping
+          # this would mark every release one.
           xcodebuild -scheme EZDisplay \
                      -configuration Release \
                      -derivedDataPath build \

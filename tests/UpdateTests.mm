@@ -341,6 +341,80 @@ static const char *const kCapturedZipRelease = R"JSON(
 
 @end
 
+#pragma mark - How a build names itself
+
+/// Two readers, asking different questions of the same two numbers. Someone
+/// running a release wants to know what they have; someone who just built it
+/// wants to know whether this is the copy with their fix in it.
+@interface BuildLabelTests : XCTestCase
+@end
+
+@implementation BuildLabelTests
+
+- (void)testAReleasedBuildIsNamedByItsRun
+{
+    // The run number is the whole value of the build number: it says which
+    // workflow run produced this copy, which is what a bug report needs.
+    XCTAssertEqual(EZBuildLabel("47", "14 Sep 18:42:07"), std::string("47"));
+}
+
+- (void)testABuildNobodyPublishedSaysWhenItWasBuilt
+{
+    // Zero is what the project carries; the workflow overwrites it with a run
+    // number that starts at one. So zero is a copy somebody built themselves,
+    // and the time it was linked is the only thing that tells one of those from
+    // the last one — the number never moves.
+    XCTAssertEqual(EZBuildLabel("0", "14 Sep 18:42:07"),
+                   std::string("dev build, 14 Sep 18:42:07"));
+}
+
+- (void)testNoBuildNumberAtAllIsAlsoADevBuild
+{
+    // A hand-edited plist can leave CFBundleVersion out. What it cannot be is a
+    // release, because the workflow always writes one.
+    XCTAssertEqual(EZBuildLabel("", "14 Sep 18:42:07"),
+                   std::string("dev build, 14 Sep 18:42:07"));
+}
+
+- (void)testADevBuildWithNoTimeStillSaysItIsOne
+{
+    // The time is read off the binary, and that read can fail. Losing it costs
+    // the reader which build; it should not cost them the fact that it is not
+    // a release.
+    XCTAssertEqual(EZBuildLabel("0", ""), std::string("dev build"));
+}
+
+@end
+
+#pragma mark - The version line in the About box
+
+@interface AboutVersionTextTests : XCTestCase
+@end
+
+@implementation AboutVersionTextTests
+
+- (void)testAReleaseShowsTheVersionAndNothingElse
+{
+    // Nobody running a release can do anything with the run number, and About
+    // is the one window written for them.
+    XCTAssertEqual(EZAboutVersionText("1.0.2", "47", "14 Sep 18:42:07"),
+                   std::string("Version 1.0.2"));
+}
+
+- (void)testADevBuildShowsWhenItWasBuilt
+{
+    XCTAssertEqual(EZAboutVersionText("1.0.2", "0", "14 Sep 18:42:07"),
+                   std::string("Version 1.0.2 (dev build, 14 Sep 18:42:07)"));
+}
+
+- (void)testADevBuildWithNoTimeIsStillMarked
+{
+    XCTAssertEqual(EZAboutVersionText("1.0.2", "0", ""),
+                   std::string("Version 1.0.2 (dev build)"));
+}
+
+@end
+
 #pragma mark - What the About box says
 
 @interface UpdateStatusTextTests : XCTestCase

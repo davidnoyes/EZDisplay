@@ -897,6 +897,15 @@ static bool ParseFails(const std::vector<std::string> &words, std::string *error
     XCTAssertEqual(EZVersionText("1.2.3", "45"), std::string("ezdisplay 1.2.3 (45)\n"));
 }
 
+- (void)testADevBuildIsPrintedAsItIsLabelled
+{
+    // Unlike the About box, `version` keeps the label whatever it says: it is
+    // what somebody pastes into a bug report, and both halves of it matter
+    // there. EZBuildLabel decides the wording; this only passes it through.
+    XCTAssertEqual(EZVersionText("1.2.3", "dev build, 14 Sep 18:42:07"),
+                   std::string("ezdisplay 1.2.3 (dev build, 14 Sep 18:42:07)\n"));
+}
+
 - (void)testAMissingBuildLeavesOutTheParentheses
 {
     // The build comes from the bundle, so a hand-edited Info.plist can leave it

@@ -58,6 +58,35 @@ struct EZRelease {
 bool EZReleaseFromJSON(const std::string &json, EZRelease *_Nonnull release,
                        std::string *_Nonnull error);
 
+/// How a build names itself in parentheses: the run that produced a released
+/// copy, and for one somebody built themselves the words "dev build" and the
+/// time it was linked.
+///
+/// The release workflow sets CFBundleVersion to the workflow run number, which
+/// starts at one and only rises. The number checked into the project is zero,
+/// so zero — or a plist carrying nothing at all — is a copy that did not come
+/// from a release. That sentinel is the only thing separating the two cases,
+/// and changing it in the project would silently mark every release a dev
+/// build.
+///
+/// `built` arrives already formatted rather than as a date, so the wording is
+/// decided here and reading the clock stays outside, where a test need not
+/// follow it.
+std::string EZBuildLabel(const std::string &build, const std::string &built);
+
+/// The version line the About box shows.
+///
+/// A released copy shows the marketing version alone. The run number that
+/// produced it answers a question a bug report asks, not one anybody opens
+/// About to ask, and `ezdisplay version` is where that reader already is.
+///
+/// A dev build shows when it was linked, because the question its reader has is
+/// "am I running the fix I just built?" — and a build number that never moves
+/// between two local builds cannot answer it.
+std::string EZAboutVersionText(const std::string &version,
+                               const std::string &build,
+                               const std::string &built);
+
 /// What the About box says about this build against the latest release.
 ///
 /// Takes both rather than reading either, so a test can check the wording
@@ -140,8 +169,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// The latest release, when GitHub answered. Nil when it did not.
 @property (readonly, copy, nullable) NSString *version;
 @property (readonly, copy, nullable) NSString *downloadURL;
-/// Whether that release is newer than this build. The one thing that decides
-/// whether there is anything to offer, so it is computed once, here.
+/// Whether that release's version is newer than this one. The one thing that
+/// decides whether there is anything to offer, so it is computed once, here.
+///
+/// The marketing version is the whole of the comparison. The build number says
+/// which run produced a copy, not which of two releases is later, and nothing
+/// here reads it.
 @property (readonly) BOOL updateAvailable;
 @end
 
@@ -151,6 +184,20 @@ NS_ASSUME_NONNULL_BEGIN
 /// marketing version and the build number Xcode wrote into it.
 + (NSString *)currentVersion;
 + (NSString *)currentBuild;
+
+/// When the running binary was linked, in the form `EZBuildLabel` wants it, or
+/// an empty string when it cannot be read.
+///
+/// Taken from the executable's modification date rather than baked in at
+/// compile time: `__DATE__` is fixed when its own translation unit is compiled,
+/// so an incremental build that relinks without recompiling that file would
+/// show a stale time — and a stale time is worse than none, because it is
+/// believed. The binary is relinked by every build that changes code.
++ (NSString *)currentBuildDate;
+
+/// The version line the About box shows, decided by `EZAboutVersionText` from
+/// the three above.
++ (NSString *)displayVersion;
 
 /// Asks GitHub for the latest release and calls back on the main thread.
 ///

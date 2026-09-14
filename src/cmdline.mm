@@ -34,6 +34,7 @@
 #import "DDCProtocol.h"
 #import "DisplayModes.h"
 #import "DisplayServices.h"
+#import "Update.h"
 #import "utils.h"
 #import "EZDisplay-Swift.h"
 
@@ -75,7 +76,13 @@ static std::string VersionText()
     NSString *shortVersion = [bundle objectForInfoDictionaryKey: @"CFBundleShortVersionString"];
     NSString *build        = [bundle objectForInfoDictionaryKey: @"CFBundleVersion"];
 
-    return EZVersionText(shortVersion.UTF8String ?: "", build.UTF8String ?: "");
+    // Unlike the About box, this keeps the label whichever it is. A run number
+    // is what a bug report needs, and a dev build saying so is what stops one
+    // being filed against a release it was never in.
+    std::string label = EZBuildLabel(build.UTF8String ?: "",
+                                     [EZUpdater currentBuildDate].UTF8String);
+
+    return EZVersionText(shortVersion.UTF8String ?: "", label);
 }
 
 

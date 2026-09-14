@@ -254,13 +254,15 @@ bool EZParseCommandLine(int argc, const char *const *argv,
 /// command name needs the list of real ones.
 std::string EZUsageText(const std::string &topic);
 
-/// What `ezdisplay version` prints, given the two numbers out of the bundle.
+/// What `ezdisplay version` prints, given the marketing version and the label
+/// `EZBuildLabel` chose for the build.
 ///
 /// Takes them rather than reading them, so a test can check the wording without
-/// the answer depending on which bundle happened to be running it. `build`
-/// empty leaves the parentheses off: it comes from a plist, and one edited by
-/// hand can be missing it.
-std::string EZVersionText(const std::string &shortVersion, const std::string &build);
+/// the answer depending on which bundle happened to be running it. An empty
+/// label leaves the parentheses off: "ezdisplay 1.2.3 ()" would read as a build
+/// numbered nothing.
+std::string EZVersionText(const std::string &shortVersion,
+                          const std::string &buildLabel);
 
 /// A display, as far as choosing between them goes.
 ///

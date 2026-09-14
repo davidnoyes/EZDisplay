@@ -81,8 +81,7 @@ class AboutWindowController: NSWindowController {
         let name = NSTextField(labelWithString: "EZDisplay")
         name.font = .systemFont(ofSize: 22, weight: .semibold)
 
-        let version = NSTextField(labelWithString:
-            "Version \(EZUpdater.currentVersion()) (build \(EZUpdater.currentBuild()))")
+        let version = NSTextField(labelWithString: EZUpdater.displayVersion())
         version.textColor = .secondaryLabelColor
 
         // Names refresh rate and HDR, which the app is largely for and the

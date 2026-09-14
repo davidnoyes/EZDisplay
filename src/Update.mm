@@ -206,6 +206,34 @@ std::string EZUpdateAppInArchive(const std::vector<std::string> &entries)
     return found;
 }
 
+/// Whether a build number says this bundle did not come from the release
+/// workflow. The sentinel, and the reason for it, are in EZBuildLabel.
+static bool IsDevBuild(const std::string &build)
+{
+    return build.empty() || build == "0";
+}
+
+std::string EZBuildLabel(const std::string &build, const std::string &built)
+{
+    if (!IsDevBuild(build))
+        return build;
+
+    if (built.empty())
+        return "dev build";
+
+    return "dev build, " + built;
+}
+
+std::string EZAboutVersionText(const std::string &version,
+                               const std::string &build,
+                               const std::string &built)
+{
+    if (!IsDevBuild(build))
+        return "Version " + version;
+
+    return "Version " + version + " (" + EZBuildLabel(build, built) + ")";
+}
+
 std::string EZUpdateStatusText(const std::string &current,
                                const std::string &latest)
 {
@@ -324,6 +352,41 @@ static const NSTimeInterval kCheckTimeout = 15.0;
         objectForInfoDictionaryKey:@"CFBundleVersion"];
 
     return build ?: @"";
+}
+
++ (NSString *)currentBuildDate
+{
+    NSURL *executable = [[self ownBundle] executableURL];
+    NSDate *built = nil;
+
+    if (![executable getResourceValue:&built
+                               forKey:NSURLContentModificationDateKey
+                                error:NULL] || built == nil)
+        return @"";
+
+    static NSDateFormatter *formatter = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        formatter = [[NSDateFormatter alloc] init];
+        // Fixed rather than the reader's locale. The only person who sees this
+        // is the one who just built it, and what they do with it is compare it
+        // against the clock and against the last one they looked at — which a
+        // format that does not move is what makes possible. Seconds are in it
+        // because two builds a minute apart are an ordinary afternoon.
+        formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+        formatter.dateFormat = @"d MMM HH:mm:ss";
+    });
+
+    return [formatter stringFromDate:built];
+}
+
++ (NSString *)displayVersion
+{
+    std::string text = EZAboutVersionText([self currentVersion].UTF8String,
+                                          [self currentBuild].UTF8String,
+                                          [self currentBuildDate].UTF8String);
+
+    return @(text.c_str());
 }
 
 + (void)checkWithCompletion:(void (^)(EZUpdateCheck *))completion
