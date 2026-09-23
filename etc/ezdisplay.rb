@@ -42,7 +42,7 @@ cask "ezdisplay" do
   # sets HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1.
   auto_updates true
 
-  depends_on macos: :big_sur
+  depends_on macos: :monterey
   depends_on arch: :arm64
 
   app "EZDisplay.app"

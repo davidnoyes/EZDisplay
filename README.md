@@ -28,7 +28,7 @@ attached display](etc/screenshot.png)
 ## Requirements
 
 - Apple silicon. The project builds for `arm64` only.
-- macOS 11.0 or later to run.
+- macOS 12.0 or later to run.
 - Xcode, only to build it yourself.
 
 ## Install

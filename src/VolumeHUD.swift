@@ -160,7 +160,7 @@ private final class ChicletBar: NSView {
     /// as a subview it owns instead of being a superview to add to.
     ///
     /// The fallback is the panel as it was, and it is not only a formality —
-    /// the deployment target is macOS 11. Its `.hudWindow` material is dark in
+    /// the deployment target is macOS 12. Its `.hudWindow` material is dark in
     /// both appearances, which is what a HUD was before macOS 26; the glass
     /// follows the system appearance instead, which is what settles the
     /// light-mode question the blur could not.
