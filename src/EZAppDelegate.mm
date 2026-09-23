@@ -966,6 +966,10 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     [self audioRecheckAfter: 2.0];
 }
 
+// performSelector rather than dispatch_after or a common-modes timer, and that
+// is load-bearing: it runs in the default run-loop mode only, so it waits while
+// a menu is being tracked. A rebuild replaces the menu, and one landing while
+// the user has it open would close it under them.
 - (void) audioRecheckAfter: (NSTimeInterval) delay
 {
     [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(audioRecheck) object: nil];
