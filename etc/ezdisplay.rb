@@ -19,8 +19,7 @@ cask "ezdisplay" do
   version "@VERSION@"
   sha256 "@SHA256@"
 
-  url "https://github.com/davidnoyes/EZDisplay/releases/download/v#{version}/EZDisplay-#{version}.zip",
-      verified: "github.com/davidnoyes/EZDisplay/"
+  url "https://github.com/davidnoyes/EZDisplay/releases/download/v#{version}/EZDisplay-#{version}.zip"
   name "EZDisplay"
   desc "Menu bar app for display resolution, refresh rate, HDR, and color"
   homepage "https://github.com/davidnoyes/EZDisplay"
