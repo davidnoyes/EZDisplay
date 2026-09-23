@@ -45,6 +45,8 @@ static const uint32_t kMaxDisplays = 0x10;
 - (void) moveVolumeBy: (EZMediaKey) key;
 - (void) scheduleMenuRefresh;
 - (void) settledMenuRefresh;
+- (void) scheduleAudioRecheck;
+- (void) audioRecheck;
 - (NSMutableArray<ResMenuItem*>*) thin: (NSArray<ResMenuItem*>*) items
                                 toCount: (NSInteger) count
                                 aroundW: (int) w h: (int) h scale: (float) s;
@@ -123,6 +125,7 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     [EZDisplayAudio invalidateCaches];
     [self observeBrightnessChanges];
     [self refreshStatusMenu];
+    [self scheduleAudioRecheck];
 }
 
 // A menu-behavior pref changed: coalesce bursts (e.g. dragging the stepper) into
@@ -938,6 +941,31 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 }
 
 
+// A volume row is decided when the menu is built, by asking the display, and a
+// display whose link is still coming up does not answer. The rebuild a
+// reconfiguration makes lands in exactly that window, so a monitor with
+// speakers can come back from a wake with no row — and with the lookup cached
+// as absent, nothing asks it again until the next reconfiguration.
+//
+// So each reconfiguration, and each time an AV service comes or goes, is
+// followed by one more look once things have settled: caches dropped, menu
+// rebuilt. Two seconds because the link answers about half a second after a
+// wake and a reconfiguration arrives as a burst spread over most of a second.
+// Its own selector for the reason scheduleMenuRefresh has one, and coalesced
+// against itself so a burst asks once.
+- (void) scheduleAudioRecheck
+{
+    [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(audioRecheck) object: nil];
+    [self performSelector: @selector(audioRecheck) withObject: nil afterDelay: 2.0];
+}
+
+- (void) audioRecheck
+{
+    [EZDisplayAudio invalidateCaches];
+    [self refreshStatusMenu];
+}
+
+
 // Every resolution and refresh-rate row lands here. The mode change itself goes
 // through SafeApply, so a picture that comes back unreadable reverts on its own.
 - (void) setMode: (ResMenuItem*) item
@@ -964,6 +992,13 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     [[NSNotificationCenter defaultCenter] addObserver: self
                                              selector: @selector(prefsChanged)
                                                  name: [EZPrefs changedNotification]
+                                               object: nil];
+
+    // A proxy can come back with no reconfiguration, and a menu built while it
+    // was gone has no volume row to recover through. See scheduleAudioRecheck.
+    [[NSNotificationCenter defaultCenter] addObserver: self
+                                             selector: @selector(scheduleAudioRecheck)
+                                                 name: EZDisplayAudioServicesChangedNotification
                                                object: nil];
 
     // Both settings can be changed from System Settings, and neither is a

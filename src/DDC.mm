@@ -269,6 +269,9 @@ static void DropCaches(void)
 
 #pragma mark - Watching the proxies
 
+NSNotificationName const EZDisplayAudioServicesChangedNotification =
+    @"EZDisplayAudioServicesChangedNotification";
+
 static void Drain(io_iterator_t iterator)
 {
     io_service_t service;
@@ -290,6 +293,11 @@ static void ProxiesChanged(void *refcon, io_iterator_t iterator)
 {
     Drain(iterator);
     DropCaches();
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[NSNotificationCenter defaultCenter]
+            postNotificationName: EZDisplayAudioServicesChangedNotification object: nil];
+    });
 }
 
 // Delivered on the bus queue, so a drop lands between exchanges rather than

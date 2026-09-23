@@ -37,6 +37,14 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/// Posted on the main thread when a monitor's AV service appears or goes away,
+/// once the caches have already been dropped.
+///
+/// Dropping them fixes every call made from then on, but not a menu built while
+/// the service was missing: that menu has no volume row, so nothing in it will
+/// ever make one of those calls. Rebuilding is the observer's job.
+extern NSNotificationName const EZDisplayAudioServicesChangedNotification;
+
 /// A monitor's built-in speakers, as the monitor's own controls rather than
 /// macOS's output volume.
 ///
