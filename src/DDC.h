@@ -144,4 +144,17 @@ NS_ASSUME_NONNULL_BEGIN
 
 @end
 
+/// Subscribes to AV service proxies appearing and disappearing, dropping every
+/// cache when either happens, and returns whether IOKit accepted both.
+///
+/// A reconfiguration is not the only time a cached service goes stale. macOS
+/// can tear a monitor's proxy down and build a new one without a CoreGraphics
+/// reconfiguration, and the cached service then holds a dead Mach port: every
+/// exchange fails with MACH_SEND_INVALID_DEST while the monitor itself is fine.
+///
+/// Called on the first lookup, so nothing needs to call it; declared here for
+/// the tests. Only the first call subscribes, and later ones report how that
+/// went.
+BOOL EZDDCWatchProxies(void);
+
 NS_ASSUME_NONNULL_END

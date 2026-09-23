@@ -65,6 +65,7 @@
 		D0C10011A0B1C2D3E4F50011 /* DDCProtocol.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C10002A0B1C2D3E4F50002 /* DDCProtocol.mm */; };
 		D0C10012A0B1C2D3E4F50012 /* DDCProtocol.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C10002A0B1C2D3E4F50002 /* DDCProtocol.mm */; };
 		D0C10013A0B1C2D3E4F50013 /* DDCProtocolTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C10003A0B1C2D3E4F50003 /* DDCProtocolTests.mm */; };
+		D0C30013A0B1C2D3E4F50013 /* DDCTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C30003A0B1C2D3E4F50003 /* DDCTests.mm */; };
 		D0C50011A0B1C2D3E4F50011 /* MediaKeys.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C50002A0B1C2D3E4F50002 /* MediaKeys.mm */; };
 		D0C50012A0B1C2D3E4F50012 /* MediaKeys.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C50002A0B1C2D3E4F50002 /* MediaKeys.mm */; };
 		D0C50013A0B1C2D3E4F50013 /* MediaKeysTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0C50003A0B1C2D3E4F50003 /* MediaKeysTests.mm */; };
@@ -138,6 +139,7 @@
 		D0C10001A0B1C2D3E4F50001 /* DDCProtocol.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DDCProtocol.h; sourceTree = "<group>"; };
 		D0C10002A0B1C2D3E4F50002 /* DDCProtocol.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = DDCProtocol.mm; sourceTree = "<group>"; };
 		D0C10003A0B1C2D3E4F50003 /* DDCProtocolTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = DDCProtocolTests.mm; sourceTree = "<group>"; };
+		D0C30003A0B1C2D3E4F50003 /* DDCTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = DDCTests.mm; sourceTree = "<group>"; };
 		D0C50001A0B1C2D3E4F50001 /* MediaKeys.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MediaKeys.h; sourceTree = "<group>"; };
 		D0C50002A0B1C2D3E4F50002 /* MediaKeys.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = MediaKeys.mm; sourceTree = "<group>"; };
 		D0C50003A0B1C2D3E4F50003 /* MediaKeysTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = MediaKeysTests.mm; sourceTree = "<group>"; };
@@ -266,6 +268,7 @@
 				FA110003A0B1C2D3E4F50003 /* UpdateTests.mm */,
 				A1B20003A0B1C2D3E4F50003 /* CommandPlanTests.mm */,
 				D0C10003A0B1C2D3E4F50003 /* DDCProtocolTests.mm */,
+				D0C30003A0B1C2D3E4F50003 /* DDCTests.mm */,
 				D0C50003A0B1C2D3E4F50003 /* MediaKeysTests.mm */,
 			);
 			path = tests;
@@ -432,6 +435,7 @@
 				A1B20013A0B1C2D3E4F50013 /* CommandPlanTests.mm in Sources */,
 				D0C10012A0B1C2D3E4F50012 /* DDCProtocol.mm in Sources */,
 				D0C10013A0B1C2D3E4F50013 /* DDCProtocolTests.mm in Sources */,
+				D0C30013A0B1C2D3E4F50013 /* DDCTests.mm in Sources */,
 				D0C20012A0B1C2D3E4F50012 /* DisplayPort.mm in Sources */,
 				D0C30012A0B1C2D3E4F50012 /* DDC.mm in Sources */,
 				D0C50012A0B1C2D3E4F50012 /* MediaKeys.mm in Sources */,

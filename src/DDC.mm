@@ -246,11 +246,100 @@ static NSMutableDictionary<NSNumber *, NSNumber *> *gWanted;
 static NSMutableDictionary<NSNumber *, NSNumber *> *gWritten;
 static os_unfair_lock gMailboxLock = OS_UNFAIR_LOCK_INIT;
 
+/// Forgets every service and range, and what was last written. On the bus
+/// queue, like the functions that fill them.
+///
+/// What was written goes because a value written to the monitor that was on a
+/// port says nothing about the one there now, and leaving it would let the
+/// first write to the new display be skipped as a duplicate.
+///
+/// What was wanted stays. It is the user's latest value rather than anything
+/// the display said, and a drop can land between a key press recording it and
+/// the queued write that reads it back: clearing it there would make that write
+/// find nothing to send, and the press would vanish without a failure to show.
+static void DropCaches(void)
+{
+    gServices = nil;
+    gRanges   = nil;
+
+    os_unfair_lock_lock(&gMailboxLock);
+    gWritten = nil;
+    os_unfair_lock_unlock(&gMailboxLock);
+}
+
+#pragma mark - Watching the proxies
+
+static void Drain(io_iterator_t iterator)
+{
+    io_service_t service;
+    while ((service = IOIteratorNext(iterator)))
+        IOObjectRelease(service);
+}
+
+/// A proxy appeared or went away, so whatever is cached may be a dead port or
+/// a stale "no service here". Either way the next exchange looks again.
+///
+/// Both directions, not only termination. A lookup made while the monitor had
+/// no proxy cached it as absent, and only the proxy's return clears that.
+///
+/// Every display's entries go, not only the one whose proxy changed. Telling
+/// which display a proxy belongs to would take the same port matching and bus
+/// probe the lookup does, inside a callback; dropping everything costs one
+/// fresh lookup per display on its next use, a handful of times at a wake.
+static void ProxiesChanged(void *refcon, io_iterator_t iterator)
+{
+    Drain(iterator);
+    DropCaches();
+}
+
+// Delivered on the bus queue, so a drop lands between exchanges rather than
+// under one: a service borrowed from the cache is only used inside a single
+// block on that queue.
+BOOL EZDDCWatchProxies(void)
+{
+    static BOOL watching;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        IONotificationPortRef port = IONotificationPortCreate(kIOMasterPortDefault);
+        if (!port)
+            return;
+        IONotificationPortSetDispatchQueue(port, BusQueue());
+
+        // Each subscription consumes its matching dictionary, and each iterator
+        // has to be drained once before it will deliver anything. The first
+        // drain is the proxies already there, which change nothing.
+        io_iterator_t matched = 0, terminated = 0;
+        const BOOL added =
+            IOServiceAddMatchingNotification(port, kIOFirstMatchNotification,
+                                             IOServiceMatching("DCPAVServiceProxy"),
+                                             ProxiesChanged, NULL, &matched) == KERN_SUCCESS
+         && IOServiceAddMatchingNotification(port, kIOTerminatedNotification,
+                                             IOServiceMatching("DCPAVServiceProxy"),
+                                             ProxiesChanged, NULL, &terminated) == KERN_SUCCESS;
+        // Half a subscription is taken down rather than left running, so that
+        // not watching means nothing is watching.
+        if (!added)
+        {
+            IOObjectRelease(matched);
+            IOObjectRelease(terminated);
+            IONotificationPortDestroy(port);
+            return;
+        }
+
+        Drain(matched);
+        Drain(terminated);
+        watching = YES;
+    });
+    return watching;
+}
+
 static IOAVServiceRef ServiceForDisplay(CGDirectDisplayID display)
 {
     ResolveSymbols();
     if (!gAVCreate || !gAVRead || !gAVWrite)
         return NULL;
+
+    EZDDCWatchProxies();
 
     if (!gServices)
         gServices = [NSMutableDictionary dictionary];
@@ -529,18 +618,7 @@ static BOOL WriteMute(CGDirectDisplayID display, BOOL muted)
 
 + (void) invalidateCaches
 {
-    dispatch_sync(BusQueue(), ^{
-        gServices = nil;
-        gRanges   = nil;
-    });
-
-    // The mailboxes go too. A value written to the monitor that was on a port
-    // says nothing about the one there now, and leaving it would let the first
-    // write to the new display be skipped as a duplicate.
-    os_unfair_lock_lock(&gMailboxLock);
-    gWanted  = nil;
-    gWritten = nil;
-    os_unfair_lock_unlock(&gMailboxLock);
+    dispatch_sync(BusQueue(), ^{ DropCaches(); });
 }
 
 @end
