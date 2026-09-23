@@ -8,6 +8,8 @@
 #import <os/lock.h>
 #import <unistd.h>
 
+#include <vector>
+
 #import "DDC.h"
 #import "DDCProtocol.h"
 #import "DisplayPort.h"
@@ -627,6 +629,18 @@ static BOOL WriteMute(CGDirectDisplayID display, BOOL muted)
 + (void) invalidateCaches
 {
     dispatch_sync(BusQueue(), ^{ DropCaches(); });
+}
+
++ (BOOL) awaitingAnswer
+{
+    __block BOOL awaiting = NO;
+    dispatch_sync(BusQueue(), ^{
+        std::vector<int> ranges;
+        for (NSNumber *range in gRanges.allValues)
+            ranges.push_back(range.intValue);
+        awaiting = EZDDCRangesAwaitAnswer(ranges.data(), ranges.size());
+    });
+    return awaiting;
 }
 
 @end

@@ -33,3 +33,19 @@
 }
 
 @end
+
+@interface DDCAwaitingAnswerTests : XCTestCase
+@end
+
+@implementation DDCAwaitingAnswerTests
+
+// The app asks this after every build to decide whether to look again, so an
+// empty cache has to say no — or a Mac with no monitor would rebuild its menu
+// on a timer until the retries ran out.
+- (void)testNothingIsAwaitedOnceTheCachesAreDropped
+{
+    [EZDisplayAudio invalidateCaches];
+    XCTAssertFalse([EZDisplayAudio awaitingAnswer]);
+}
+
+@end

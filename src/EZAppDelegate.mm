@@ -27,6 +27,7 @@
 
 /// The most displays this app will look at, matching the interface's limit.
 static const uint32_t kMaxDisplays = 0x10;
+static const NSInteger kAudioRetries = 3;
 
 
 @interface EZAppDelegate () <NSMenuDelegate>
@@ -46,7 +47,9 @@ static const uint32_t kMaxDisplays = 0x10;
 - (void) scheduleMenuRefresh;
 - (void) settledMenuRefresh;
 - (void) scheduleAudioRecheck;
+- (void) audioRecheckAfter: (NSTimeInterval) delay;
 - (void) audioRecheck;
+- (void) lookAgainIfUnanswered;
 - (NSMutableArray<ResMenuItem*>*) thin: (NSArray<ResMenuItem*>*) items
                                 toCount: (NSInteger) count
                                 aroundW: (int) w h: (int) h scale: (float) s;
@@ -94,6 +97,10 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     // Nothing notifies when a monitor's own buttons move its volume, so these
     // re-read when the menu opens rather than on a change.
     NSMutableArray<VolumeSliderItem *> *volumeItems;
+
+    // How many more times a failed volume read may send the menu back to the
+    // display. See lookAgainIfUnanswered.
+    NSInteger audioRechecksLeft;
 }
 
 // An agent app is not the active one when its menu is clicked, and a window put
@@ -955,14 +962,40 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 // against itself so a burst asks once.
 - (void) scheduleAudioRecheck
 {
+    audioRechecksLeft = kAudioRetries;
+    [self audioRecheckAfter: 2.0];
+}
+
+- (void) audioRecheckAfter: (NSTimeInterval) delay
+{
     [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(audioRecheck) object: nil];
-    [self performSelector: @selector(audioRecheck) withObject: nil afterDelay: 2.0];
+    [self performSelector: @selector(audioRecheck) withObject: nil afterDelay: delay];
 }
 
 - (void) audioRecheck
 {
     [EZDisplayAudio invalidateCaches];
     [self refreshStatusMenu];
+    [self lookAgainIfUnanswered];
+}
+
+// A settled link is not a clean bus. A monitor with speakers has been seen to
+// answer the lookup's own read and then fail every attempt at the range read
+// straight after it, two builds running, and answer every read after that — so
+// one more look is not always enough, and at launch there was not even that.
+//
+// Only a read that failed outright counts, which is rare, so this costs nothing
+// on a normal build: a monitor without speakers says so, and a display with no
+// DDC service is never asked. Bounded, and spaced wider each time, because a
+// rebuild closes an open menu and a bus that is still failing after half a
+// minute is not going to be fixed by asking faster.
+- (void) lookAgainIfUnanswered
+{
+    if (audioRechecksLeft <= 0 || ![EZDisplayAudio awaitingAnswer])
+        return;
+
+    audioRechecksLeft--;
+    [self audioRecheckAfter: 2.0 * (1 << (kAudioRetries - audioRechecksLeft))];
 }
 
 
@@ -1016,6 +1049,8 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
     // Build the menu before the status item exists, so the first thing shown in
     // the bar already has one rather than briefly clicking through to nothing.
     [self refreshStatusMenu];
+    audioRechecksLeft = kAudioRetries;
+    [self lookAgainIfUnanswered];
     CGDisplayRegisterReconfigurationCallback(DisplayReconfigurationCallback, (__bridge void *) self);
 
     // After the first build, so the tap already knows whether it has anything

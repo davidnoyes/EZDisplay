@@ -173,6 +173,15 @@ inline bool EZDDCRangeIsSettled(int cached) { return cached >= 0; }
 /// deleting it wholesale, which reinstates the bug, left the whole suite green.
 int EZDDCRangeToRemember(int cached, const EZDDCReading &reading);
 
+/// Whether any of these cached ranges came from a read that failed, and so is
+/// worth asking again once the bus has had time to recover.
+///
+/// Only `EZDDCRangeUnconfirmed` counts. A settled entry is the display's own
+/// answer, and `EZDDCRangeUnknown` means there was never a service to ask
+/// through — asking again on a timer would never end for a display that has
+/// no DDC at all.
+bool EZDDCRangesAwaitAnswer(const int *ranges, size_t count);
+
 /// No value: an empty mailbox, or a code nothing has written yet.
 enum { EZDDCNoValue = -1 };
 

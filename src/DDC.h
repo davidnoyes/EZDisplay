@@ -150,6 +150,14 @@ extern NSNotificationName const EZDisplayAudioServicesChangedNotification;
 /// monitor or none, so keeping it would send volume to the wrong display.
 + (void) invalidateCaches;
 
+/// Whether some display's last read failed without an answer either way, so
+/// that asking again later, from dropped caches, may yet find a control.
+///
+/// A menu built on such a read is missing a row for a display that may have
+/// the control, and nothing in that menu will ever ask again. See
+/// `EZDDCRangesAwaitAnswer` for what counts.
++ (BOOL) awaitingAnswer;
+
 @end
 
 /// Subscribes to AV service proxies appearing and disappearing, dropping every

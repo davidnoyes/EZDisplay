@@ -368,6 +368,24 @@ static EZDDCReading RefusedReading(void)
     XCTAssertEqual(EZDDCRangeToRemember(EZDDCRangeUnknown, empty), 0);
 }
 
+- (void)testAFailedReadIsWorthAskingAgainLater
+{
+    // What left a monitor with speakers without a volume row: the menu was
+    // built on a read that failed, and nothing asked again.
+    const int ranges[] = {100, EZDDCRangeUnconfirmed};
+    XCTAssertTrue(EZDDCRangesAwaitAnswer(ranges, 2));
+}
+
+- (void)testSettledAndNeverAskedAreNotWorthAskingAgain
+{
+    // A display that answered, either way, has nothing more to say. One that
+    // was never asked had no service to ask through — a built-in panel, or no
+    // DDC at all — and asking again on a timer would never end.
+    const int ranges[] = {100, 0, EZDDCRangeUnknown};
+    XCTAssertFalse(EZDDCRangesAwaitAnswer(ranges, 3));
+    XCTAssertFalse(EZDDCRangesAwaitAnswer(ranges, 0), @"no displays, nothing to ask");
+}
+
 @end
 
 

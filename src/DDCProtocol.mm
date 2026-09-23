@@ -157,6 +157,14 @@ int EZDDCRangeToRemember(int cached, const EZDDCReading &reading)
     return EZDDCRangeUnconfirmed;
 }
 
+bool EZDDCRangesAwaitAnswer(const int *ranges, size_t count)
+{
+    for (size_t i = 0; i < count; i++)
+        if (ranges[i] == EZDDCRangeUnconfirmed)
+            return true;
+    return false;
+}
+
 EZDDCPendingWrite EZDDCNextWrite(int wanted, int lastWritten)
 {
     EZDDCPendingWrite next;
