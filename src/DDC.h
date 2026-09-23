@@ -153,8 +153,9 @@ extern NSNotificationName const EZDisplayAudioServicesChangedNotification;
 /// Whether some display's last read failed without an answer either way, so
 /// that asking again later, from dropped caches, may yet find a control.
 ///
-/// A menu built on such a read is missing a row for a display that may have
-/// the control, and nothing in that menu will ever ask again. See
+/// A menu built on such a read is missing a control the display may have: the
+/// volume row, when the volume read failed, or a working mute button, when the
+/// mute read did. Nothing in that menu will ever ask again. See
 /// `EZDDCRangesAwaitAnswer` for what counts.
 + (BOOL) awaitingAnswer;
 
