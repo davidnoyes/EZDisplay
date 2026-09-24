@@ -1022,13 +1022,17 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 // without this the lookup made while it slept stands until the app restarts.
 // These moments are when it is certainly awake and certainly wanted.
 //
-// Through audioRecheckAfter:, so an answer found while the menu is open waits
-// for it to close rather than rebuilding it under the pointer; the row is there
-// the next time it opens.
+// A rebuild rather than audioRecheck, which would drop the answer just found and
+// ask for it again, blocking this time. Posted, so an answer found while the
+// menu is open waits for it to close rather than rebuilding it under the
+// pointer; the row is there the next time it opens.
 - (void) volumeWanted
 {
     __weak EZAppDelegate* weakSelf = self;
-    [EZDisplayAudio lookAgainWhereUnanswered: ^{ [weakSelf audioRecheckAfter: 0]; }];
+    [EZDisplayAudio lookAgainWhereUnanswered: ^{
+        [NSObject cancelPreviousPerformRequestsWithTarget: weakSelf selector: @selector(refreshStatusMenu) object: nil];
+        [weakSelf performSelector: @selector(refreshStatusMenu) withObject: nil afterDelay: 0];
+    }];
 }
 
 

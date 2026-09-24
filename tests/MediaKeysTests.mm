@@ -176,6 +176,7 @@ static int64_t Data1(int keyCode, bool down, bool repeated)
     // A monitor whose link was asleep when it was last asked looks exactly like
     // this, and a press is the first sign that it is awake and wanted.
     XCTAssertTrue(EZMediaKeyWantsTarget(EZMediaKeyVolumeUp, false, false));
+    XCTAssertTrue(EZMediaKeyWantsTarget(EZMediaKeyMute, false, false));
 }
 
 - (void)testAKeyThatIsAlreadyHandledNeedsNoSearch
