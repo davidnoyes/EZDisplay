@@ -96,14 +96,9 @@ static IOReturn SendRequest(IOAVServiceRef service, uint8_t *packet, size_t leng
 /// question already settled — see `EZDDCReplyOutcome`.
 ///
 /// Nor is one worth making to a display that is not there. A sleeping display's
-/// proxy fails every exchange at once with one of these two, so trying again
-/// would only be slower, and the reading says so rather than looking like a
-/// garbled reply: the range cache must not count it against the display.
-static bool NobodyThere(IOReturn rc)
-{
-    return rc == kIOReturnNoDevice || rc == kIOReturnOffline;
-}
-
+/// proxy fails every exchange at once, so trying again would only be slower,
+/// and the reading says so rather than looking like a garbled reply: the range
+/// cache must not count it against the display.
 static EZDDCReading ReadVCP(IOAVServiceRef service, uint8_t vcp)
 {
     IOReturn rc = kIOReturnError;
@@ -117,14 +112,14 @@ static EZDDCReading ReadVCP(IOAVServiceRef service, uint8_t vcp)
         const size_t requested = EZDDCBuildReadRequest(vcp, request);
 
         rc = SendRequest(service, request, requested);
-        if (NobodyThere(rc))
+        if (EZDDCTransportFoundNobody(rc))
             break;
 
         usleep(kSettleBeforeRead);
 
         uint8_t reply[EZDDCReplyLength] = {0};
         rc = gAVRead(service, kChipAddress, kReadOffset, reply, (uint32_t) sizeof(reply));
-        if (NobodyThere(rc))
+        if (EZDDCTransportFoundNobody(rc))
             break;
 
         if (rc == kIOReturnSuccess)
@@ -136,7 +131,7 @@ static EZDDCReading ReadVCP(IOAVServiceRef service, uint8_t vcp)
     }
 
     EZDDCReading reading;
-    if (NobodyThere(rc))
+    if (EZDDCTransportFoundNobody(rc))
         reading.outcome = EZDDCReplyNoDevice;
     return reading;
 }
@@ -178,9 +173,9 @@ static BOOL ServiceIsExternal(io_service_t service)
 ///
 /// The first proxy on the port, if there were ever more than one. Only one has
 /// been seen, and every one on a port leads to the same monitor, so the choice
-/// cannot send anything to the wrong display; one that turned out not to answer
-/// would read as a display with no volume, which is where not choosing would
-/// have left it.
+/// cannot send anything to the wrong display. The cost of a wrong one is the
+/// volume row: missing while it fails, and asked again each time the volume is
+/// wanted for as long as it says there is nobody there.
 static IOAVServiceRef CopyServiceForDisplay(CGDirectDisplayID display)
 {
     NSString *portNode = EZPortNodeForDisplay(display);
@@ -660,9 +655,11 @@ static std::atomic<bool> gLookingAgain{false};
         // Asked afresh rather than a second time. A second failure in a row
         // settles a code as absent, and this runs because someone wants the
         // volume now, on a bus that may still be failing.
-        NSArray<NSNumber *> *awaited =
-            [[gRanges allKeysForObject: @(EZDDCRangeUnconfirmed)]
-                arrayByAddingObjectsFromArray: [gRanges allKeysForObject: @(EZDDCRangeNoDevice)]];
+        NSArray<NSNumber *> *awaited = [gRanges keysOfEntriesPassingTest:
+            ^BOOL (NSNumber *key, NSNumber *range, BOOL *stop) {
+                const int cached = range.intValue;
+                return EZDDCRangesAwaitAnswer(&cached, 1);
+            }].allObjects;
         for (NSNumber *key in awaited)
         {
             [gRanges removeObjectForKey: key];

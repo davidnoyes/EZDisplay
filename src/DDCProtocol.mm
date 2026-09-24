@@ -7,6 +7,8 @@
 
 #include <string.h>
 
+#include <IOKit/IOReturn.h>
+
 // The DDC/CI host's 7-bit I2C address, and the register inside the display that
 // a frame is written to and read from. IOAVServiceWriteI2C takes both as
 // arguments, so neither appears in the buffer — but the checksum is defined
@@ -141,6 +143,11 @@ bool EZDDCReadingIsDefinite(const EZDDCReading &reading)
 {
     return reading.outcome == EZDDCReplyValid
         || reading.outcome == EZDDCReplyUnsupported;
+}
+
+bool EZDDCTransportFoundNobody(int32_t rc)
+{
+    return rc == kIOReturnNoDevice || rc == kIOReturnOffline;
 }
 
 int EZDDCRangeToRemember(int cached, const EZDDCReading &reading)

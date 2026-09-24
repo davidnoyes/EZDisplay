@@ -20,6 +20,9 @@
 #import <XCTest/XCTest.h>
 #import "DDCProtocol.h"
 
+#import <IOKit/IOReturn.h>
+#include <mach/message.h>
+
 #include <vector>
 
 /// A reply with the checksum a display would have put on it.
@@ -433,6 +436,20 @@ static EZDDCReading NoDeviceReading(void)
     // the volume is the next chance it has to answer.
     const int ranges[] = {EZDDCRangeUnknown, EZDDCRangeNoDevice};
     XCTAssertTrue(EZDDCRangesAwaitAnswer(ranges, 2));
+}
+
+- (void)testTheTransportSaysWhenNobodyIsThere
+{
+    // The two a sleeping display's proxy answers with. Anything else is a
+    // fault on the bus, which is worth retrying and counts as a strike.
+    XCTAssertTrue(EZDDCTransportFoundNobody(kIOReturnNoDevice));
+    XCTAssertTrue(EZDDCTransportFoundNobody(kIOReturnOffline));
+
+    XCTAssertFalse(EZDDCTransportFoundNobody(kIOReturnSuccess));
+    XCTAssertFalse(EZDDCTransportFoundNobody(kIOReturnError));
+    XCTAssertFalse(EZDDCTransportFoundNobody(kIOReturnTimeout));
+    XCTAssertFalse(EZDDCTransportFoundNobody(MACH_SEND_INVALID_DEST),
+                   @"a dead cached port is a stale service, not a sleeping display");
 }
 
 - (void)testANoDeviceReadingIsNotDefinite

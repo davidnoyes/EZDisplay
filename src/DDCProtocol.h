@@ -146,6 +146,14 @@ bool EZDDCReadingIsSupported(const EZDDCReading &reading);
 /// keeping it makes one bad read permanent. Cache on this, not on the boolean.
 bool EZDDCReadingIsDefinite(const EZDDCReading &reading);
 
+/// Whether an IOReturn from the transport means there was nobody there to ask,
+/// which is what a sleeping display's proxy says to every exchange.
+///
+/// Such a read is worth neither another attempt now nor a strike against the
+/// display: see `EZDDCReplyNoDevice`. Everything else, including a dead Mach
+/// port on a stale service, is a fault on the bus and is treated as one.
+bool EZDDCTransportFoundNobody(int32_t rc);
+
 /// The two states a cached range can be in before it holds a range.
 ///
 /// Both are negative so a settled entry is any value from zero up, and zero
@@ -191,10 +199,10 @@ int EZDDCRangeToRemember(int cached, const EZDDCReading &reading);
 /// Whether any of these cached ranges came from a read that failed or found the
 /// display asleep, and so is worth asking again once it may answer.
 ///
-/// Only `EZDDCRangeUnconfirmed` and `EZDDCRangeNoDevice` count. A settled entry is the display's own
-/// answer, and `EZDDCRangeUnknown` means there was never a service to ask
-/// through — asking again on a timer would never end for a display that has
-/// no DDC at all.
+/// Only `EZDDCRangeUnconfirmed` and `EZDDCRangeNoDevice` count. A settled
+/// entry is the display's own answer, and `EZDDCRangeUnknown` means there was
+/// never a service to ask through — asking again on a timer would never end
+/// for a display that has no DDC at all.
 bool EZDDCRangesAwaitAnswer(const int *ranges, size_t count);
 
 /// No value: an empty mailbox, or a code nothing has written yet.
