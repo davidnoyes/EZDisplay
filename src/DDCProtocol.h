@@ -87,6 +87,13 @@ enum EZDDCReplyOutcome {
     EZDDCReplyUnsupported,
 
     EZDDCReplyValid,
+
+    /// Nothing there to ask: the transport said `kIOReturnNoDevice` or
+    /// `kIOReturnOffline`, which is what a sleeping display's proxy says. Not a
+    /// fault on the bus, so not worth repeating now, and not a strike against
+    /// the display either — see `EZDDCRangeToRemember`. Never parsed from a
+    /// reply; only the transport can say it.
+    EZDDCReplyNoDevice,
 };
 
 /// What a display said when asked for one code.
@@ -146,6 +153,7 @@ bool EZDDCReadingIsDefinite(const EZDDCReading &reading);
 enum {
     EZDDCRangeUnknown     = -2,  ///< Never asked.
     EZDDCRangeUnconfirmed = -1,  ///< Asked once, and the exchange failed.
+    EZDDCRangeNoDevice    = -3,  ///< Asked, and the display was not there to answer.
 };
 
 /// Whether a cached range is the display's own answer rather than a placeholder.
@@ -168,37 +176,26 @@ inline bool EZDDCRangeIsSettled(int cached) { return cached >= 0; }
 /// rather than unbounded, and a false negative needs eight failed attempts in a
 /// row on a bus that fails about one in twelve.
 ///
+/// A sleeping display is neither. Its proxy is still there and answers every
+/// exchange with `EZDDCReplyNoDevice`, and waking it posts nothing, so counting
+/// that as a failure would settle a monitor with speakers as having none after
+/// two reads taken in its sleep — for good. It is recorded as
+/// `EZDDCRangeNoDevice`, which asks again without counting, and an earlier
+/// failure is left as it was rather than forgiven or advanced.
+///
 /// Pure, and separate from the cache it advises, because the version of this
 /// decision that lived inside the lookup could not be reached by a test:
 /// deleting it wholesale, which reinstates the bug, left the whole suite green.
 int EZDDCRangeToRemember(int cached, const EZDDCReading &reading);
 
-/// Whether any of these cached ranges came from a read that failed, and so is
-/// worth asking again once the bus has had time to recover.
+/// Whether any of these cached ranges came from a read that failed or found the
+/// display asleep, and so is worth asking again once it may answer.
 ///
-/// Only `EZDDCRangeUnconfirmed` counts. A settled entry is the display's own
+/// Only `EZDDCRangeUnconfirmed` and `EZDDCRangeNoDevice` count. A settled entry is the display's own
 /// answer, and `EZDDCRangeUnknown` means there was never a service to ask
 /// through — asking again on a timer would never end for a display that has
 /// no DDC at all.
 bool EZDDCRangesAwaitAnswer(const int *ranges, size_t count);
-
-/// What looking for a display's AV service came to.
-enum EZDDCLookup {
-    EZDDCLookupFound = 0,   ///< A candidate answered, and it is the service.
-    EZDDCLookupAbsent,      ///< Nothing on the display's port to ask.
-    EZDDCLookupUnanswered,  ///< Something was there, and nothing it said was an answer.
-};
-
-/// Decides between those, from how many candidates on the port were probed and
-/// whether any of them answered.
-///
-/// Absent and unanswered look the same to a caller, which gets no service
-/// either way, and they must not be remembered the same way. Absent lasts until
-/// a proxy comes or goes, which is watched for. Unanswered is what a sleeping
-/// display's proxy looks like — it says `kIOReturnNoDevice` — and waking the
-/// display posts nothing, so remembering it as absent keeps a monitor with
-/// speakers silent until the app restarts.
-EZDDCLookup EZDDCLookupOutcome(int candidatesProbed, bool anyAnswered);
 
 /// No value: an empty mailbox, or a code nothing has written yet.
 enum { EZDDCNoValue = -1 };

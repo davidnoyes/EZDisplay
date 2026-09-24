@@ -94,6 +94,16 @@ static IOReturn SendRequest(IOAVServiceRef service, uint8_t *packet, size_t leng
 /// properly the rest of the time. A display that answers "no such code" has
 /// answered, and asking four more times would put most of half a second into a
 /// question already settled — see `EZDDCReplyOutcome`.
+///
+/// Nor is one worth making to a display that is not there. A sleeping display's
+/// proxy fails every exchange at once with one of these two, so trying again
+/// would only be slower, and the reading says so rather than looking like a
+/// garbled reply: the range cache must not count it against the display.
+static bool NobodyThere(IOReturn rc)
+{
+    return rc == kIOReturnNoDevice || rc == kIOReturnOffline;
+}
+
 static EZDDCReading ReadVCP(IOAVServiceRef service, uint8_t vcp)
 {
     IOReturn rc = kIOReturnError;
@@ -107,14 +117,14 @@ static EZDDCReading ReadVCP(IOAVServiceRef service, uint8_t vcp)
         const size_t requested = EZDDCBuildReadRequest(vcp, request);
 
         rc = SendRequest(service, request, requested);
-        if (rc == kIOReturnNoDevice)
+        if (NobodyThere(rc))
             break;
 
         usleep(kSettleBeforeRead);
 
         uint8_t reply[EZDDCReplyLength] = {0};
         rc = gAVRead(service, kChipAddress, kReadOffset, reply, (uint32_t) sizeof(reply));
-        if (rc == kIOReturnNoDevice)
+        if (NobodyThere(rc))
             break;
 
         if (rc == kIOReturnSuccess)
@@ -125,7 +135,10 @@ static EZDDCReading ReadVCP(IOAVServiceRef service, uint8_t vcp)
         }
     }
 
-    return EZDDCReading();
+    EZDDCReading reading;
+    if (NobodyThere(rc))
+        reading.outcome = EZDDCReplyNoDevice;
+    return reading;
 }
 
 static BOOL WriteVCP(IOAVServiceRef service, uint8_t vcp, uint16_t value)
@@ -152,20 +165,24 @@ static BOOL ServiceIsExternal(io_service_t service)
 
 /// The AV service for `display`, or NULL.
 ///
-/// Two things make this more than a lookup. One monitor is exposed as several
-/// DCPAVServiceProxy entries on the same port, and only one of them has the
-/// bus behind it — the others answer kIOReturnNoDevice — so each candidate is
-/// probed with a read and the one that answers is the one kept. And a display
-/// whose port cannot be identified gets no service at all rather than the first
-/// external proxy that turns up: sending one monitor's volume to another is
-/// exactly the failure the port matching exists to prevent.
+/// Chosen from the registry alone, without a word on the bus: the external
+/// DCPAVServiceProxy on the display's port. That is what keeps a sleeping
+/// display from being mistaken for a missing one. Its proxy is there and says
+/// kIOReturnNoDevice to everything, so a lookup that asked it a question found
+/// nothing and remembered that, and waking the display posts nothing to make it
+/// look again.
 ///
-/// `outcome` says why when the answer is NULL, which decides how long that
-/// answer is kept: see `EZDDCLookupOutcome`.
-static IOAVServiceRef CopyServiceForDisplay(CGDirectDisplayID display, EZDDCLookup *outcome)
+/// A display whose port cannot be identified gets no service at all rather than
+/// the first external proxy that turns up: sending one monitor's volume to
+/// another is exactly the failure the port matching exists to prevent.
+///
+/// The first proxy on the port, if there were ever more than one. Only one has
+/// been seen, and every one on a port leads to the same monitor, so the choice
+/// cannot send anything to the wrong display; one that turned out not to answer
+/// would read as a display with no volume, which is where not choosing would
+/// have left it.
+static IOAVServiceRef CopyServiceForDisplay(CGDirectDisplayID display)
 {
-    *outcome = EZDDCLookupAbsent;
-
     NSString *portNode = EZPortNodeForDisplay(display);
     if (!portNode)
         return NULL;
@@ -176,42 +193,16 @@ static IOAVServiceRef CopyServiceForDisplay(CGDirectDisplayID display, EZDDCLook
                                      &iter) != KERN_SUCCESS)
         return NULL;
 
-    int probed = 0;
     IOAVServiceRef chosen = NULL;
     io_service_t service;
     while ((service = IOIteratorNext(iter)))
     {
         if (!chosen && ServiceIsExternal(service) && EZServiceIsOnPort(service, portNode))
-        {
-            IOAVServiceRef candidate = gAVCreate(kCFAllocatorDefault, service);
-            if (candidate)
-            {
-                // Any answer proves the bus is there, including a refusal: this
-                // asks whether the proxy is the live one, not whether the
-                // display has speakers.
-                //
-                // The answer, not the return code. A read whose every attempt
-                // came back garbled still ends with the transport reporting
-                // success — the I2C transaction went through and the payload
-                // was rubbish — so judging by the return code would let a proxy
-                // that never said anything coherent claim the slot. It is the
-                // only candidate examined once chosen, so the live one behind
-                // it would never be probed, and a monitor with a volume control
-                // would report that it has none.
-                const EZDDCReading probe = ReadVCP(candidate, EZVCPSpeakerVolume);
-                probed++;
-
-                if (EZDDCReadingIsDefinite(probe))
-                    chosen = candidate;
-                else
-                    CFRelease(candidate);
-            }
-        }
+            chosen = gAVCreate(kCFAllocatorDefault, service);
         IOObjectRelease(service);
     }
     IOObjectRelease(iter);
 
-    *outcome = EZDDCLookupOutcome(probed, chosen != NULL);
     return chosen;
 }
 
@@ -298,9 +289,9 @@ static void Drain(io_iterator_t iterator)
 /// no proxy cached it as absent, and only the proxy's return clears that.
 ///
 /// Every display's entries go, not only the one whose proxy changed. Telling
-/// which display a proxy belongs to would take the same port matching and bus
-/// probe the lookup does, inside a callback; dropping everything costs one
-/// fresh lookup per display on its next use, a handful of times at a wake.
+/// which display a proxy belongs to would take the same port matching the
+/// lookup does, inside a callback; dropping everything costs one fresh lookup
+/// per display on its next use, a handful of times at a wake.
 static void ProxiesChanged(void *refcon, io_iterator_t iterator)
 {
     Drain(iterator);
@@ -353,18 +344,6 @@ BOOL EZDDCWatchProxies(void)
     return watching;
 }
 
-/// What `gServices` holds for a display whose proxy was there and did not
-/// answer, beside `NSNull` for one with nothing to ask. Both stop the next call
-/// from probing again, since a probe that fails can take most of a second; only
-/// this one is looked at again, by `lookAgainWhereUnanswered:`.
-static id Unanswered(void)
-{
-    static NSObject *unanswered;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ unanswered = [NSObject new]; });
-    return unanswered;
-}
-
 static IOAVServiceRef ServiceForDisplay(CGDirectDisplayID display)
 {
     ResolveSymbols();
@@ -377,16 +356,17 @@ static IOAVServiceRef ServiceForDisplay(CGDirectDisplayID display)
         gServices = [NSMutableDictionary dictionary];
 
     id cached = gServices[@(display)];
-    if (cached == [NSNull null] || cached == Unanswered())
+    if (cached == [NSNull null])
         return NULL;
     if (cached)
         return (__bridge IOAVServiceRef) cached;
 
-    EZDDCLookup outcome;
-    IOAVServiceRef service = CopyServiceForDisplay(display, &outcome);
+    // Nothing on the port is safe to remember: a proxy arriving is watched
+    // for, and it drops this.
+    IOAVServiceRef service = CopyServiceForDisplay(display);
     if (!service)
     {
-        gServices[@(display)] = outcome == EZDDCLookupUnanswered ? Unanswered() : [NSNull null];
+        gServices[@(display)] = [NSNull null];
         return NULL;
     }
 
@@ -661,8 +641,7 @@ static BOOL WriteMute(CGDirectDisplayID display, BOOL muted)
         std::vector<int> ranges;
         for (NSNumber *range in gRanges.allValues)
             ranges.push_back(range.intValue);
-        awaiting = EZDDCRangesAwaitAnswer(ranges.data(), ranges.size())
-                || [gServices allKeysForObject: Unanswered()].count > 0;
+        awaiting = EZDDCRangesAwaitAnswer(ranges.data(), ranges.size());
     });
     return awaiting;
 }
@@ -678,17 +657,13 @@ static std::atomic<bool> gLookingAgain{false};
     dispatch_async(BusQueue(), ^{
         BOOL settled = NO;
 
-        for (NSNumber *display in [gServices allKeysForObject: Unanswered()])
-        {
-            [gServices removeObjectForKey: display];
-            if (ServiceForDisplay(display.unsignedIntValue))
-                settled = YES;
-        }
-
         // Asked afresh rather than a second time. A second failure in a row
         // settles a code as absent, and this runs because someone wants the
         // volume now, on a bus that may still be failing.
-        for (NSNumber *key in [gRanges allKeysForObject: @(EZDDCRangeUnconfirmed)])
+        NSArray<NSNumber *> *awaited =
+            [[gRanges allKeysForObject: @(EZDDCRangeUnconfirmed)]
+                arrayByAddingObjectsFromArray: [gRanges allKeysForObject: @(EZDDCRangeNoDevice)]];
+        for (NSNumber *key in awaited)
         {
             [gRanges removeObjectForKey: key];
             const uint64_t packed = key.unsignedLongLongValue;

@@ -149,6 +149,12 @@ int EZDDCRangeToRemember(int cached, const EZDDCReading &reading)
     if (EZDDCReadingIsDefinite(reading))
         return EZDDCReadingIsSupported(reading) ? reading.maximum : 0;
 
+    // Nobody was there to ask, which says nothing about the code. Kept apart
+    // from a failure so it is asked again without counting as one, and an
+    // earlier failure stays exactly one.
+    if (reading.outcome == EZDDCReplyNoDevice)
+        return cached == EZDDCRangeUnconfirmed ? cached : EZDDCRangeNoDevice;
+
     // It did not, and this is the second time. Two failed reads in a row are
     // what a display that answers this way every time looks like.
     if (cached == EZDDCRangeUnconfirmed)
@@ -160,16 +166,9 @@ int EZDDCRangeToRemember(int cached, const EZDDCReading &reading)
 bool EZDDCRangesAwaitAnswer(const int *ranges, size_t count)
 {
     for (size_t i = 0; i < count; i++)
-        if (ranges[i] == EZDDCRangeUnconfirmed)
+        if (ranges[i] == EZDDCRangeUnconfirmed || ranges[i] == EZDDCRangeNoDevice)
             return true;
     return false;
-}
-
-EZDDCLookup EZDDCLookupOutcome(int candidatesProbed, bool anyAnswered)
-{
-    if (anyAnswered)
-        return EZDDCLookupFound;
-    return candidatesProbed > 0 ? EZDDCLookupUnanswered : EZDDCLookupAbsent;
 }
 
 EZDDCPendingWrite EZDDCNextWrite(int wanted, int lastWritten)

@@ -386,35 +386,59 @@ static EZDDCReading RefusedReading(void)
     XCTAssertFalse(EZDDCRangesAwaitAnswer(ranges, 0), @"no displays, nothing to ask");
 }
 
-@end
-
-
-#pragma mark - What a service lookup found
-
-@interface DDCLookupTests : XCTestCase
-@end
-
-@implementation DDCLookupTests
-
-- (void)testACandidateThatAnsweredIsKept
+static EZDDCReading NoDeviceReading(void)
 {
-    XCTAssertEqual(EZDDCLookupOutcome(2, true), EZDDCLookupFound);
+    EZDDCReading asleep;
+    asleep.outcome = EZDDCReplyNoDevice;
+    return asleep;
 }
 
-- (void)testNothingOnThePortIsAbsent
+- (void)testASleepingDisplayIsNotAStrikeAgainstIt
 {
-    // A built-in panel, or a port with no proxy yet. A proxy arriving is what
-    // clears this, so it is safe to remember.
-    XCTAssertEqual(EZDDCLookupOutcome(0, false), EZDDCLookupAbsent);
+    // The bug, one cache along. The service is found without asking the bus,
+    // so the first thing to meet a sleeping display is the range read — and two
+    // of those, a menu build and a key press, were two strikes. The volume row
+    // was then gone for good, because waking posts nothing.
+    const int once = EZDDCRangeToRemember(EZDDCRangeUnknown, NoDeviceReading());
+    const int twice = EZDDCRangeToRemember(once, NoDeviceReading());
+
+    XCTAssertFalse(EZDDCRangeIsSettled(once));
+    XCTAssertFalse(EZDDCRangeIsSettled(twice), @"asleep is not an answer, however often");
+    XCTAssertEqual(twice, EZDDCRangeNoDevice);
 }
 
-- (void)testAProxyThatDidNotAnswerIsNotAbsent
+- (void)testAFailedReadAfterSleepIsTheFirstStrikeNotTheSecond
 {
-    // What left a monitor with speakers without a volume row or its keys for the
-    // rest of the day: the lookup ran while the display slept, its proxy said
-    // kIOReturnNoDevice, and that was remembered as no service at all. Waking
-    // posts nothing, so nothing ever asked again.
-    XCTAssertEqual(EZDDCLookupOutcome(1, false), EZDDCLookupUnanswered);
+    // Waking and then fumbling one exchange is one failure, not two.
+    const int asleep = EZDDCRangeToRemember(EZDDCRangeUnknown, NoDeviceReading());
+    const int then = EZDDCRangeToRemember(asleep, NullMessageReading());
+
+    XCTAssertEqual(then, EZDDCRangeUnconfirmed);
+}
+
+- (void)testSleepingBetweenTwoFailedReadsNeitherForgivesNorSettles
+{
+    // One strike stays one strike across a sleep: a display that only ever
+    // answers with the null message still settles, on its next failure.
+    const int once = EZDDCRangeToRemember(EZDDCRangeUnknown, NullMessageReading());
+    const int asleep = EZDDCRangeToRemember(once, NoDeviceReading());
+
+    XCTAssertEqual(asleep, EZDDCRangeUnconfirmed);
+    XCTAssertEqual(EZDDCRangeToRemember(asleep, NullMessageReading()), 0);
+}
+
+- (void)testASleepingDisplayIsWorthAskingAgainLater
+{
+    // The display is there and asleep, and the next time someone reaches for
+    // the volume is the next chance it has to answer.
+    const int ranges[] = {EZDDCRangeUnknown, EZDDCRangeNoDevice};
+    XCTAssertTrue(EZDDCRangesAwaitAnswer(ranges, 2));
+}
+
+- (void)testANoDeviceReadingIsNotDefinite
+{
+    XCTAssertFalse(EZDDCReadingIsDefinite(NoDeviceReading()));
+    XCTAssertFalse(EZDDCReadingIsSupported(NoDeviceReading()));
 }
 
 @end

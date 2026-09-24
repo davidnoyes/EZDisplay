@@ -150,14 +150,13 @@ extern NSNotificationName const EZDisplayAudioServicesChangedNotification;
 /// monitor or none, so keeping it would send volume to the wrong display.
 + (void) invalidateCaches;
 
-/// Whether some display's last read failed without an answer either way, so
-/// that asking again later, from dropped caches, may yet find a control.
+/// Whether some display's last read failed without an answer either way, or
+/// found the display asleep, so that asking again later may yet find a control.
 ///
 /// A menu built on such a read is missing a control the display may have: the
-/// volume row, when the volume read failed or the display's proxy did not
-/// answer at all, or a working mute button, when the mute read did. Nothing in
-/// that menu will ever ask again. See `EZDDCRangesAwaitAnswer` and
-/// `EZDDCLookupOutcome` for what counts.
+/// volume row, when the volume read failed, or a working mute button, when the
+/// mute read did. Nothing in that menu will ever ask again. See
+/// `EZDDCRangesAwaitAnswer` for what counts.
 + (BOOL) awaitingAnswer;
 
 /// Asks again, in the background, wherever `awaitingAnswer` would say yes, and
@@ -167,7 +166,7 @@ extern NSNotificationName const EZDisplayAudioServicesChangedNotification;
 /// when it was last asked cannot be told apart from one that never answers,
 /// and waking it posts nothing, so the next time it is wanted is the next
 /// chance to find out. In the background because a display that never answers
-/// takes most of a second per proxy to fail, and a menu is opening.
+/// takes a third of a second per code to fail, and a menu is opening.
 ///
 /// `answered` is not run when nothing changed, which is what keeps a monitor
 /// with no DDC from rebuilding the menu every time it is opened. Calls made
