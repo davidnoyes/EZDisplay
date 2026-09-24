@@ -389,6 +389,37 @@ static EZDDCReading RefusedReading(void)
 @end
 
 
+#pragma mark - What a service lookup found
+
+@interface DDCLookupTests : XCTestCase
+@end
+
+@implementation DDCLookupTests
+
+- (void)testACandidateThatAnsweredIsKept
+{
+    XCTAssertEqual(EZDDCLookupOutcome(2, true), EZDDCLookupFound);
+}
+
+- (void)testNothingOnThePortIsAbsent
+{
+    // A built-in panel, or a port with no proxy yet. A proxy arriving is what
+    // clears this, so it is safe to remember.
+    XCTAssertEqual(EZDDCLookupOutcome(0, false), EZDDCLookupAbsent);
+}
+
+- (void)testAProxyThatDidNotAnswerIsNotAbsent
+{
+    // What left a monitor with speakers without a volume row or its keys for the
+    // rest of the day: the lookup ran while the display slept, its proxy said
+    // kIOReturnNoDevice, and that was remembered as no service at all. Waking
+    // posts nothing, so nothing ever asked again.
+    XCTAssertEqual(EZDDCLookupOutcome(1, false), EZDDCLookupUnanswered);
+}
+
+@end
+
+
 #pragma mark - Frames this parser was actually handed
 
 /// Bytes captured off the bus, not composed here.

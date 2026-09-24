@@ -78,6 +78,15 @@ bool EZMediaKeyShouldAct(const EZMediaKeyPress &press);
 /// this answered rather than by asking again.
 bool EZMediaKeyShouldIntercept(EZMediaKey key, bool systemHasVolume, bool hasTarget);
 
+/// Whether a press the tap passes on is a reason to look for a display again.
+///
+/// The keys do nothing against this output and no display has claimed them,
+/// which is also how a monitor looks when its link was asleep the last time it
+/// was asked. Nothing is posted when a display wakes, so a press is the first
+/// sign that it is awake and that someone wants its volume. That press goes to
+/// macOS: the tap cannot wait on the bus to find out, and the next one is taken.
+bool EZMediaKeyWantsTarget(EZMediaKey key, bool systemHasVolume, bool hasTarget);
+
 /// Whether the tap should swallow this event, given what it did with the press.
 ///
 /// `held` is a bitmask of the keys whose press was taken, which this updates.

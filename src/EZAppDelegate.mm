@@ -50,6 +50,7 @@ static const NSInteger kAudioRetries = 3;
 - (void) audioRecheckAfter: (NSTimeInterval) delay;
 - (void) audioRecheck;
 - (void) lookAgainIfUnanswered;
+- (void) volumeWanted;
 - (NSMutableArray<ResMenuItem*>*) thin: (NSArray<ResMenuItem*>*) items
                                 toCount: (NSInteger) count
                                 aroundW: (int) w h: (int) h scale: (float) s;
@@ -822,7 +823,13 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 - (void) startVolumeKeys
 {
     __weak EZAppDelegate* weakSelf = self;
-    [EZVolumeKeys startWithHandler: ^(EZMediaKeyPress press) { [weakSelf volumeKeyEvent: press]; }];
+    [EZVolumeKeys startWithHandler: ^(EZMediaKeyPress press) { [weakSelf volumeKeyEvent: press]; }
+                         unclaimed: ^{
+                             // Off in Settings is also no target, and then a
+                             // press is not a request for anything.
+                             if ([EZPrefs resolvedVolumeKeys])
+                                 [weakSelf volumeWanted];
+                         }];
 }
 
 
@@ -914,7 +921,11 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 // a row updates in place rather than through a rebuild.
 - (void) menuWillOpen: (NSMenu*) menu
 {
-    if (menu != statusMenu || volumeItems.count == 0)
+    if (menu != statusMenu)
+        return;
+
+    [self volumeWanted];
+    if (volumeItems.count == 0)
         return;
 
     NSArray<VolumeSliderItem *>* items = [volumeItems copy];
@@ -1000,6 +1011,24 @@ void DisplayReconfigurationCallback(CGDirectDisplayID cg_id,
 
     audioRechecksLeft--;
     [self audioRecheckAfter: 2.0 * (1 << (kAudioRetries - audioRechecksLeft))];
+}
+
+// Someone reached for the volume: opened the menu, or pressed a key nothing took.
+//
+// The retries above run for half a minute after an event, and the case they
+// cannot reach is a display that slept through them. Its proxy answers
+// kIOReturnNoDevice while asleep, and waking it posts nothing at all — no
+// reconfiguration, no workspace notification, no proxy coming or going — so
+// without this the lookup made while it slept stands until the app restarts.
+// These moments are when it is certainly awake and certainly wanted.
+//
+// Through audioRecheckAfter:, so an answer found while the menu is open waits
+// for it to close rather than rebuilding it under the pointer; the row is there
+// the next time it opens.
+- (void) volumeWanted
+{
+    __weak EZAppDelegate* weakSelf = self;
+    [EZDisplayAudio lookAgainWhereUnanswered: ^{ [weakSelf audioRecheckAfter: 0]; }];
 }
 
 

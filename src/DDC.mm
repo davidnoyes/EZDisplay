@@ -8,6 +8,7 @@
 #import <os/lock.h>
 #import <unistd.h>
 
+#include <atomic>
 #include <vector>
 
 #import "DDC.h"
@@ -158,8 +159,13 @@ static BOOL ServiceIsExternal(io_service_t service)
 /// whose port cannot be identified gets no service at all rather than the first
 /// external proxy that turns up: sending one monitor's volume to another is
 /// exactly the failure the port matching exists to prevent.
-static IOAVServiceRef CopyServiceForDisplay(CGDirectDisplayID display)
+///
+/// `outcome` says why when the answer is NULL, which decides how long that
+/// answer is kept: see `EZDDCLookupOutcome`.
+static IOAVServiceRef CopyServiceForDisplay(CGDirectDisplayID display, EZDDCLookup *outcome)
 {
+    *outcome = EZDDCLookupAbsent;
+
     NSString *portNode = EZPortNodeForDisplay(display);
     if (!portNode)
         return NULL;
@@ -170,6 +176,7 @@ static IOAVServiceRef CopyServiceForDisplay(CGDirectDisplayID display)
                                      &iter) != KERN_SUCCESS)
         return NULL;
 
+    int probed = 0;
     IOAVServiceRef chosen = NULL;
     io_service_t service;
     while ((service = IOIteratorNext(iter)))
@@ -192,6 +199,7 @@ static IOAVServiceRef CopyServiceForDisplay(CGDirectDisplayID display)
                 // it would never be probed, and a monitor with a volume control
                 // would report that it has none.
                 const EZDDCReading probe = ReadVCP(candidate, EZVCPSpeakerVolume);
+                probed++;
 
                 if (EZDDCReadingIsDefinite(probe))
                     chosen = candidate;
@@ -202,6 +210,8 @@ static IOAVServiceRef CopyServiceForDisplay(CGDirectDisplayID display)
         IOObjectRelease(service);
     }
     IOObjectRelease(iter);
+
+    *outcome = EZDDCLookupOutcome(probed, chosen != NULL);
     return chosen;
 }
 
@@ -343,6 +353,18 @@ BOOL EZDDCWatchProxies(void)
     return watching;
 }
 
+/// What `gServices` holds for a display whose proxy was there and did not
+/// answer, beside `NSNull` for one with nothing to ask. Both stop the next call
+/// from probing again, since a probe that fails can take most of a second; only
+/// this one is looked at again, by `lookAgainWhereUnanswered:`.
+static id Unanswered(void)
+{
+    static NSObject *unanswered;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ unanswered = [NSObject new]; });
+    return unanswered;
+}
+
 static IOAVServiceRef ServiceForDisplay(CGDirectDisplayID display)
 {
     ResolveSymbols();
@@ -355,15 +377,16 @@ static IOAVServiceRef ServiceForDisplay(CGDirectDisplayID display)
         gServices = [NSMutableDictionary dictionary];
 
     id cached = gServices[@(display)];
-    if (cached == [NSNull null])
+    if (cached == [NSNull null] || cached == Unanswered())
         return NULL;
     if (cached)
         return (__bridge IOAVServiceRef) cached;
 
-    IOAVServiceRef service = CopyServiceForDisplay(display);
+    EZDDCLookup outcome;
+    IOAVServiceRef service = CopyServiceForDisplay(display, &outcome);
     if (!service)
     {
-        gServices[@(display)] = [NSNull null];
+        gServices[@(display)] = outcome == EZDDCLookupUnanswered ? Unanswered() : [NSNull null];
         return NULL;
     }
 
@@ -638,9 +661,48 @@ static BOOL WriteMute(CGDirectDisplayID display, BOOL muted)
         std::vector<int> ranges;
         for (NSNumber *range in gRanges.allValues)
             ranges.push_back(range.intValue);
-        awaiting = EZDDCRangesAwaitAnswer(ranges.data(), ranges.size());
+        awaiting = EZDDCRangesAwaitAnswer(ranges.data(), ranges.size())
+                || [gServices allKeysForObject: Unanswered()].count > 0;
     });
     return awaiting;
+}
+
+// Set while a look is queued, so a burst of key presses asks the bus once.
+static std::atomic<bool> gLookingAgain{false};
+
++ (void) lookAgainWhereUnanswered: (void (^)(void)) answered
+{
+    if (gLookingAgain.exchange(true))
+        return;
+
+    dispatch_async(BusQueue(), ^{
+        BOOL settled = NO;
+
+        for (NSNumber *display in [gServices allKeysForObject: Unanswered()])
+        {
+            [gServices removeObjectForKey: display];
+            if (ServiceForDisplay(display.unsignedIntValue))
+                settled = YES;
+        }
+
+        // Asked afresh rather than a second time. A second failure in a row
+        // settles a code as absent, and this runs because someone wants the
+        // volume now, on a bus that may still be failing.
+        for (NSNumber *key in [gRanges allKeysForObject: @(EZDDCRangeUnconfirmed)])
+        {
+            [gRanges removeObjectForKey: key];
+            const uint64_t packed = key.unsignedLongLongValue;
+            MaximumFor((CGDirectDisplayID) (packed >> 8), (uint8_t) (packed & 0xFF));
+
+            NSNumber *now = gRanges[key];
+            if (now && EZDDCRangeIsSettled(now.intValue))
+                settled = YES;
+        }
+
+        gLookingAgain = false;
+        if (settled)
+            dispatch_async(dispatch_get_main_queue(), answered);
+    });
 }
 
 @end

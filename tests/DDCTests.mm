@@ -48,4 +48,18 @@
     XCTAssertFalse([EZDisplayAudio awaitingAnswer]);
 }
 
+// Opening the menu and pressing a volume key both ask this, so with nothing
+// awaited it has to stay quiet — or every press on a Mac with no monitor would
+// rebuild the menu.
+- (void)testLookingAgainWithNothingAwaitedFindsNothing
+{
+    [EZDisplayAudio invalidateCaches];
+
+    XCTestExpectation *answered = [self expectationWithDescription: @"answered"];
+    answered.inverted = YES;
+    [EZDisplayAudio lookAgainWhereUnanswered: ^{ [answered fulfill]; }];
+
+    [self waitForExpectations: @[answered] timeout: 0.5];
+}
+
 @end

@@ -165,6 +165,13 @@ bool EZDDCRangesAwaitAnswer(const int *ranges, size_t count)
     return false;
 }
 
+EZDDCLookup EZDDCLookupOutcome(int candidatesProbed, bool anyAnswered)
+{
+    if (anyAnswered)
+        return EZDDCLookupFound;
+    return candidatesProbed > 0 ? EZDDCLookupUnanswered : EZDDCLookupAbsent;
+}
+
 EZDDCPendingWrite EZDDCNextWrite(int wanted, int lastWritten)
 {
     EZDDCPendingWrite next;

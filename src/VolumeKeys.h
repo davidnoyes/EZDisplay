@@ -67,8 +67,14 @@ NS_ASSUME_NONNULL_BEGIN
 /// matters because revoking Accessibility disables the tap without destroying
 /// it, so re-enabling is exactly what a returning grant needs — and it is what
 /// makes the grant usable without a restart.
+///
+/// `unclaimed` runs on the main thread for a first press the tap passed on
+/// because no display had claimed the keys, when macOS has no volume of its own
+/// for the output either. See `EZMediaKeyWantsTarget` for why that is worth
+/// hearing about.
 #ifdef __cplusplus
-+ (void) startWithHandler: (void (^)(EZMediaKeyPress press)) handler;
++ (void) startWithHandler: (void (^)(EZMediaKeyPress press)) handler
+               unclaimed: (void (^)(void)) unclaimed;
 #endif
 
 /// How many displays the keys have something to say to.

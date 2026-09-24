@@ -182,6 +182,24 @@ int EZDDCRangeToRemember(int cached, const EZDDCReading &reading);
 /// no DDC at all.
 bool EZDDCRangesAwaitAnswer(const int *ranges, size_t count);
 
+/// What looking for a display's AV service came to.
+enum EZDDCLookup {
+    EZDDCLookupFound = 0,   ///< A candidate answered, and it is the service.
+    EZDDCLookupAbsent,      ///< Nothing on the display's port to ask.
+    EZDDCLookupUnanswered,  ///< Something was there, and nothing it said was an answer.
+};
+
+/// Decides between those, from how many candidates on the port were probed and
+/// whether any of them answered.
+///
+/// Absent and unanswered look the same to a caller, which gets no service
+/// either way, and they must not be remembered the same way. Absent lasts until
+/// a proxy comes or goes, which is watched for. Unanswered is what a sleeping
+/// display's proxy looks like — it says `kIOReturnNoDevice` — and waking the
+/// display posts nothing, so remembering it as absent keeps a monitor with
+/// speakers silent until the app restarts.
+EZDDCLookup EZDDCLookupOutcome(int candidatesProbed, bool anyAnswered);
+
 /// No value: an empty mailbox, or a code nothing has written yet.
 enum { EZDDCNoValue = -1 };
 

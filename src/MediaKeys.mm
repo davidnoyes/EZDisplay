@@ -80,6 +80,11 @@ bool EZMediaKeyShouldIntercept(EZMediaKey key, bool systemHasVolume, bool hasTar
     return key != EZMediaKeyNone && !systemHasVolume && hasTarget;
 }
 
+bool EZMediaKeyWantsTarget(EZMediaKey key, bool systemHasVolume, bool hasTarget)
+{
+    return key != EZMediaKeyNone && !systemHasVolume && !hasTarget;
+}
+
 int EZVolumeAfterKey(int percent, EZMediaKey key)
 {
     const int from = Clamp(percent, 0, 100);

@@ -170,6 +170,24 @@ static int64_t Data1(int keyCode, bool down, bool repeated)
     XCTAssertTrue(EZMediaKeyShouldIntercept(EZMediaKeyMute, false, true));
 }
 
+- (void)testAKeyWithNothingToMoveItIsAReasonToLookForADisplay
+{
+    // The keys are dead against this output, and no display has claimed them.
+    // A monitor whose link was asleep when it was last asked looks exactly like
+    // this, and a press is the first sign that it is awake and wanted.
+    XCTAssertTrue(EZMediaKeyWantsTarget(EZMediaKeyVolumeUp, false, false));
+}
+
+- (void)testAKeyThatIsAlreadyHandledNeedsNoSearch
+{
+    XCTAssertFalse(EZMediaKeyWantsTarget(EZMediaKeyVolumeUp, true, false),
+                   @"macOS has a dial of its own for this output");
+    XCTAssertFalse(EZMediaKeyWantsTarget(EZMediaKeyVolumeUp, false, true),
+                   @"a display already has the keys");
+    XCTAssertFalse(EZMediaKeyWantsTarget(EZMediaKeyNone, false, false),
+                   @"not a key this project acts on");
+}
+
 @end
 
 

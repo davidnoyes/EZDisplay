@@ -18,6 +18,7 @@
 static CFMachPortRef      gPort;
 static CFRunLoopSourceRef gSource;
 static void (^gHandler)(EZMediaKeyPress);
+static void (^gUnclaimed)(void);
 static atomic_int         gTargetCount;
 
 /// Which keys this tap took the press of, one bit each. Touched only by the
@@ -117,9 +118,15 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type,
     // headphones mid-press and asking again would hand macOS a release for a
     // press it never saw.
     const bool firstPress = press.pressed && !press.repeated;
+    const bool systemHas  = firstPress && SystemOwnsVolume();
+    const bool hasTarget  = atomic_load(&gTargetCount) > 0;
     const bool intercept  = firstPress
-                         && EZMediaKeyShouldIntercept(press.key, SystemOwnsVolume(),
-                                                      atomic_load(&gTargetCount) > 0);
+                         && EZMediaKeyShouldIntercept(press.key, systemHas, hasTarget);
+
+    // Told, and not waited for: finding a display means the bus, and the tap
+    // does not wait on the bus. This press goes to macOS either way.
+    if (firstPress && gUnclaimed && EZMediaKeyWantsTarget(press.key, systemHas, hasTarget))
+        dispatch_async(dispatch_get_main_queue(), gUnclaimed);
 
     if (!EZMediaKeyTakeEvent(press, intercept, &gHeldKeys))
         return event;
@@ -155,10 +162,11 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type,
 }
 
 + (void) startWithHandler: (void (^)(EZMediaKeyPress press)) handler
+               unclaimed: (void (^)(void)) unclaimed
 {
-    // `gPort` and `gHandler` are written here and read by the callback, which
-    // is safe only because this is called from one thread and the tap thread
-    // is started after both are set.
+    // `gPort`, `gHandler` and `gUnclaimed` are written here and read by the
+    // callback, which is safe only because this is called from one thread and
+    // the tap thread is started after all three are set.
     NSAssert(NSThread.isMainThread, @"EZVolumeKeys must be started from the main thread");
 
     switch (EZVolumeKeysStartAction(AXIsProcessTrusted(), gPort != NULL))
@@ -179,7 +187,8 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type,
             break;
     }
 
-    gHandler = [handler copy];
+    gHandler   = [handler copy];
+    gUnclaimed = [unclaimed copy];
 
     gPort = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap,
                              kCGEventTapOptionDefault,
@@ -189,7 +198,8 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type,
     {
         // The grant is in place and the tap was still refused, which is what a
         // sandboxed build looks like. Nothing else in the app depends on it.
-        gHandler = nil;
+        gHandler   = nil;
+        gUnclaimed = nil;
         return;
     }
 

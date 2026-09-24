@@ -154,10 +154,25 @@ extern NSNotificationName const EZDisplayAudioServicesChangedNotification;
 /// that asking again later, from dropped caches, may yet find a control.
 ///
 /// A menu built on such a read is missing a control the display may have: the
-/// volume row, when the volume read failed, or a working mute button, when the
-/// mute read did. Nothing in that menu will ever ask again. See
-/// `EZDDCRangesAwaitAnswer` for what counts.
+/// volume row, when the volume read failed or the display's proxy did not
+/// answer at all, or a working mute button, when the mute read did. Nothing in
+/// that menu will ever ask again. See `EZDDCRangesAwaitAnswer` and
+/// `EZDDCLookupOutcome` for what counts.
 + (BOOL) awaitingAnswer;
+
+/// Asks again, in the background, wherever `awaitingAnswer` would say yes, and
+/// runs `answered` on the main thread if any of it now has an answer.
+///
+/// For the moments someone reaches for the volume. A display that was asleep
+/// when it was last asked cannot be told apart from one that never answers,
+/// and waking it posts nothing, so the next time it is wanted is the next
+/// chance to find out. In the background because a display that never answers
+/// takes most of a second per proxy to fail, and a menu is opening.
+///
+/// `answered` is not run when nothing changed, which is what keeps a monitor
+/// with no DDC from rebuilding the menu every time it is opened. Calls made
+/// while one is still queued are dropped.
++ (void) lookAgainWhereUnanswered: (void (^)(void)) answered;
 
 @end
 
