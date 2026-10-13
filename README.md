@@ -445,8 +445,8 @@ ezdisplay nightshift off          # off, and the schedule off with it
 ezdisplay nightshift scheduled    # hand the tint back to the schedule
 ```
 
-`on` matches the checkbox in **System Settings**: it leaves the schedule as it
-was, and macOS clears it when the schedule next turns the tint off, so the
+`on` matches the checkbox in **System Settings**: it leaves any schedule as it
+was, and macOS clears it when that schedule next turns the tint off, so the
 command calls it on until tomorrow. `scheduled` takes that override off at once,
 and the tint comes and goes on its own.
 

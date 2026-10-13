@@ -113,7 +113,15 @@ import ServiceManagement
             // A schedule already running changes to the new kind now. Storing
             // it alone would leave the popup and the tint disagreeing until
             // something else moved the mode.
-            if EZNightShift.mode() != .off { _ = EZNightShift.setMode(newValue) }
+            //
+            // Changing the kind clears On until tomorrow — measured: a new
+            // window, or the same kind again, leaves it — so it is put back.
+            // The tint was asked for whichever schedule runs underneath it.
+            if EZNightShift.mode() != .off {
+                let untilTomorrow = EZNightShift.state() == .untilTomorrow
+                _ = EZNightShift.setMode(newValue)
+                if untilTomorrow { _ = EZNightShift.setEnabled(true) }
+            }
             notifyChanged()
         }
     }

@@ -470,7 +470,13 @@ static int ShowNightShift(const EZCommandRequest &request)
             fprintf(stdout, "Night Shift is off, warmth %d%%.\n", warmth);
             break;
         case EZNightShiftUntilTomorrow:
-            fprintf(stdout, "Night Shift is on until tomorrow, warmth %d%%.\n", warmth);
+            // The schedule underneath is named where there is one, because it
+            // is what the tint goes back to.
+            if ([EZNightShift mode] != EZNightShiftModeOff)
+                fprintf(stdout, "Night Shift is on until tomorrow, then scheduled %s, warmth %d%%.\n",
+                        [EZNightShift descriptionOfScheduleMode: scheduleMode].UTF8String, warmth);
+            else
+                fprintf(stdout, "Night Shift is on until tomorrow, warmth %d%%.\n", warmth);
             break;
         case EZNightShiftScheduled:
             // Both halves, because the schedule alone does not say whether the
@@ -536,7 +542,7 @@ static int SetNightShift(const EZCommandRequest &request)
         // change, which reads as a failure without a word about it.
         fprintf(stdout, "Night Shift schedule %s%s\n",
                 [EZNightShift descriptionOfScheduleMode: wanted].UTF8String,
-                [EZNightShift state] == EZNightShiftScheduled
+                [EZNightShift mode] != EZNightShiftModeOff
                     ? "." : ". Night Shift is not running it: ezdisplay nightshift scheduled");
         return EZExitKept;
     }
@@ -556,6 +562,12 @@ static int SetNightShift(const EZCommandRequest &request)
     if (![EZNightShift setState: wanted scheduleMode: scheduleMode]) {
         fprintf(stderr, "Cannot set Night Shift %s.\n", names[wanted]);
         return EZExitFailed;
+    }
+
+    if (wanted == EZNightShiftUntilTomorrow && [EZNightShift mode] != EZNightShiftModeOff) {
+        fprintf(stdout, "Night Shift on until tomorrow, then scheduled %s.\n",
+                [EZNightShift descriptionOfScheduleMode: scheduleMode].UTF8String);
+        return EZExitKept;
     }
 
     if (wanted != EZNightShiftScheduled) {

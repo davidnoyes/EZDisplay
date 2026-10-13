@@ -119,9 +119,9 @@ typedef NS_ENUM(NSInteger, EZNightShiftState) {
 /// because the window covers this minute or because someone overrode it.
 /// `override` tells the two apart: the daemon's own value, measured as 4 after
 /// the tint was turned on, 3 after it was turned off inside the window, and 0
-/// with no override or when it cannot be read. An override turning the tint on
-/// wins over the schedule, so long as the tint really is on; otherwise a
-/// running schedule wins.
+/// with no override, or -1 when it cannot be read. An override turning the
+/// tint on wins over the schedule, so long as the tint really is on; otherwise
+/// a running schedule wins.
 + (EZNightShiftState) stateForMode: (EZNightShiftMode) mode
                            enabled: (BOOL) enabled
                           override: (NSInteger) override;
@@ -130,8 +130,9 @@ typedef NS_ENUM(NSInteger, EZNightShiftState) {
 ///
 /// On until tomorrow turns the tint on and touches nothing else, as the
 /// System Settings checkbox does, so the schedule is still there when the
-/// override clears. The other two write both dials, because each can
-/// contradict the other.
+/// override clears. Where the override cannot be read back, it takes the
+/// schedule off instead, so the state reads back as what was asked for. The
+/// other two write both dials, because each can contradict the other.
 ///
 /// `scheduleMode` is which schedule `EZNightShiftScheduled` should run, and is
 /// ignored for the other two. It is a parameter rather than something read here

@@ -187,17 +187,17 @@ static BOOL ReadBlueLightStatus(EZBlueLightStatus *status)
 
 
 /// The daemon's override value, which `stateForMode:enabled:override:`
-/// interprets, or 0 when there is nobody to ask. Each layer is checked, because
+/// interprets, or -1 when it cannot be read. Each layer is checked, because
 /// the dictionary is private and a key that changed type would otherwise raise
-/// rather than read as no override.
+/// rather than read as unknown.
 static NSInteger ReadBlueLightOverride(void)
 {
     NSDictionary *status = [BrightnessSystemClient() copyPropertyForKey: @"CBBlueReductionStatus"];
     if (![status isKindOfClass: [NSDictionary class]])
-        return 0;
+        return -1;
 
     NSNumber *value = status[@"BlueLightReductionAlgoOverride"];
-    return [value isKindOfClass: [NSNumber class]] ? value.integerValue : 0;
+    return [value isKindOfClass: [NSNumber class]] ? value.integerValue : -1;
 }
 
 
@@ -329,8 +329,15 @@ static NSInteger ReadBlueLightOverride(void)
     // clears it when the schedule next turns the tint off, which is what hands
     // the tint back to a schedule left running. That holds whether or not the
     // window covers this minute — measured: the override is recorded either way.
-    if (state == EZNightShiftUntilTomorrow)
+    //
+    // Unless the override cannot be read back. A schedule left running would
+    // then read as Scheduled, and the menu would tick that over the item just
+    // picked, so the schedule goes the way it did before this kept it.
+    if (state == EZNightShiftUntilTomorrow) {
+        if (ReadBlueLightOverride() < 0 && ![self setMode: EZNightShiftModeOff])
+            return NO;
         return [self setEnabled: YES];
+    }
 
     // Both dials are written from a known starting point rather than from
     // wherever they happened to be, because each reads through the other.

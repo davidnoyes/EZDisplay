@@ -11,12 +11,14 @@
 //  until tomorrow** override sitting on top of it? The daemon's override value
 //  says which. The numbers are measured against the real daemon, not taken
 //  from a header: 4 after turning the tint on, 3 after turning it off inside
-//  the window, and 0 once a mode change or the window closing clears it.
+//  the window, and 0 once a mode change or the window closing clears it. -1
+//  is this file's own, for an override that could not be read at all.
 //
 
 #import <XCTest/XCTest.h>
 #import "CoreBrightness.h"
 
+static const NSInteger kUnreadable  = -1;
 static const NSInteger kNoOverride  = 0;
 static const NSInteger kOverrideOff = 3;
 static const NSInteger kOverrideOn  = 4;
@@ -42,8 +44,20 @@ static const NSInteger kOverrideOn  = 4;
 {
     // A release that stops reporting the override must not lose the state the
     // tint and the mode already settle between them.
-    XCTAssertEqual([EZNightShift stateForMode: EZNightShiftModeOff enabled: YES override: kNoOverride],
+    XCTAssertEqual([EZNightShift stateForMode: EZNightShiftModeOff enabled: YES override: kUnreadable],
                    EZNightShiftUntilTomorrow);
+}
+
+- (void)testStaleOverrideWithNoScheduleAndNoTintIsOff
+{
+    XCTAssertEqual([EZNightShift stateForMode: EZNightShiftModeOff enabled: NO override: kOverrideOn],
+                   EZNightShiftOff);
+}
+
+- (void)testOverrideOffWithNoScheduleIsOff
+{
+    XCTAssertEqual([EZNightShift stateForMode: EZNightShiftModeOff enabled: NO override: kOverrideOff],
+                   EZNightShiftOff);
 }
 
 - (void)testScheduleOutsideItsWindowIsScheduled
@@ -67,6 +81,15 @@ static const NSInteger kOverrideOn  = 4;
     // and the menu would tick the wrong item.
     XCTAssertEqual([EZNightShift stateForMode: EZNightShiftModeSunset enabled: YES override: kOverrideOn],
                    EZNightShiftUntilTomorrow);
+}
+
+- (void)testScheduleWithTintIsScheduledWhenTheOverrideCannotBeRead
+{
+    // Nothing to tell the window from an override, so the schedule is the
+    // reading. setState: keeps this from contradicting a click: without the
+    // override, On until tomorrow drops the schedule as it used to.
+    XCTAssertEqual([EZNightShift stateForMode: EZNightShiftModeSunset enabled: YES override: kUnreadable],
+                   EZNightShiftScheduled);
 }
 
 - (void)testOverrideOnTopOfACustomScheduleIsOnUntilTomorrow
