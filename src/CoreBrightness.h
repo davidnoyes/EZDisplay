@@ -38,12 +38,13 @@ typedef NS_ENUM(NSInteger, EZNightShiftMode) {
 /// The three things Night Shift can be doing, as one mutually exclusive choice.
 ///
 /// System Settings has the schedule and the **Turn on until tomorrow** checkbox
-/// as two independent controls, which lets you set a state — scheduled, and
-/// overridden on top — that no single word describes. These three are what a
-/// menu can offer, and `mode` and `enabled` are the two dials underneath them.
+/// as two independent controls. These three are what a menu can offer, and
+/// `mode`, `enabled`, and the daemon's override are the dials underneath them.
+/// On until tomorrow is the checkbox, and like the checkbox it leaves the
+/// schedule where it was, so a schedule underneath it takes over again.
 typedef NS_ENUM(NSInteger, EZNightShiftState) {
     EZNightShiftOff,             // no tint and no schedule
-    EZNightShiftUntilTomorrow,   // the tint now, cleared at the next boundary
+    EZNightShiftUntilTomorrow,   // the tint now, until any schedule next turns it off
     EZNightShiftScheduled,       // the schedule decides, with no override on top
 };
 
@@ -63,8 +64,10 @@ typedef NS_ENUM(NSInteger, EZNightShiftState) {
 + (BOOL) enabled;
 
 /// Turns the tint on or off now, which is the **Turn on until tomorrow**
-/// checkbox rather than the schedule. macOS clears the override at the next
-/// schedule boundary, so this does not survive the way a schedule does.
+/// checkbox rather than the schedule. macOS clears the override when the
+/// schedule next changes what it wants — measured: an override turning the
+/// tint on before the window opens is still there inside it, and goes when the
+/// window closes — so this does not survive the way a schedule does.
 ///
 /// Returns whether the change was made — the setting reads back immediately, so
 /// a caller can re-read rather than assume.
@@ -106,13 +109,29 @@ typedef NS_ENUM(NSInteger, EZNightShiftState) {
 /// when nothing is running.
 + (NSString *) descriptionOfScheduleMode: (EZNightShiftMode) scheduleMode;
 
-/// Which of the three states is in force, read from `mode` and `enabled`
-/// together. A schedule wins: with one running, `enabled` says whether the
-/// window covers this minute rather than whether anyone overrode it.
+/// Which of the three states is in force, read from the live dials.
 + (EZNightShiftState) state;
 
-/// Moves to one of the three, which takes both dials because the states are
-/// exclusive and each dial can contradict the other.
+/// Which of the three states the dials amount to, apart from reading them so
+/// the decision can be tested without the daemon.
+///
+/// With a schedule running, `enabled` says only that the tint is on, whether
+/// because the window covers this minute or because someone overrode it.
+/// `override` tells the two apart: the daemon's own value, measured as 4 after
+/// the tint was turned on, 3 after it was turned off inside the window, and 0
+/// with no override or when it cannot be read. An override turning the tint on
+/// wins over the schedule, so long as the tint really is on; otherwise a
+/// running schedule wins.
++ (EZNightShiftState) stateForMode: (EZNightShiftMode) mode
+                           enabled: (BOOL) enabled
+                          override: (NSInteger) override;
+
+/// Moves to one of the three.
+///
+/// On until tomorrow turns the tint on and touches nothing else, as the
+/// System Settings checkbox does, so the schedule is still there when the
+/// override clears. The other two write both dials, because each can
+/// contradict the other.
 ///
 /// `scheduleMode` is which schedule `EZNightShiftScheduled` should run, and is
 /// ignored for the other two. It is a parameter rather than something read here

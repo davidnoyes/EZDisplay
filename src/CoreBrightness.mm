@@ -48,6 +48,12 @@ typedef struct {
 - (void) setStatusNotificationBlock: (void (^)(void)) block;
 @end
 
+/// The general property reader, here for the one thing the blue light client's
+/// structure leaves out: whether an override sits on top of a schedule.
+@protocol EZBrightnessSystemClient <NSObject>
+- (nullable id) copyPropertyForKey: (NSString *) key;
+@end
+
 @protocol EZTrueToneClient <NSObject>
 - (BOOL) available;
 - (BOOL) enabled;
@@ -125,6 +131,26 @@ static id<EZBlueLightClient> BlueLightClient(void)
 }
 
 
+/// Not required by the blue light client above, for the same reason the
+/// notification is not: without it, an override on top of a schedule reads as
+/// Scheduled, and the menu ticks the wrong item until the override clears. That
+/// costs far less than losing Night Shift altogether.
+static id<EZBrightnessSystemClient> BrightnessSystemClient(void)
+{
+    static id<EZBrightnessSystemClient> client;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        OpenCoreBrightness();
+        const SEL required[] = {
+            @selector(copyPropertyForKey:),
+        };
+        client = MakeClient(@"BrightnessSystemClient", required,
+                            sizeof(required) / sizeof(required[0]));
+    });
+    return client;
+}
+
+
 static id<EZTrueToneClient> TrueToneClient(void)
 {
     static id<EZTrueToneClient> client;
@@ -157,6 +183,21 @@ static BOOL ReadBlueLightStatus(EZBlueLightStatus *status)
 
     id<EZBlueLightClient> client = BlueLightClient();
     return client != nil && [client getBlueLightStatus: status];
+}
+
+
+/// The daemon's override value, which `stateForMode:enabled:override:`
+/// interprets, or 0 when there is nobody to ask. Each layer is checked, because
+/// the dictionary is private and a key that changed type would otherwise raise
+/// rather than read as no override.
+static NSInteger ReadBlueLightOverride(void)
+{
+    NSDictionary *status = [BrightnessSystemClient() copyPropertyForKey: @"CBBlueReductionStatus"];
+    if (![status isKindOfClass: [NSDictionary class]])
+        return 0;
+
+    NSNumber *value = status[@"BlueLightReductionAlgoOverride"];
+    return [value isKindOfClass: [NSNumber class]] ? value.integerValue : 0;
 }
 
 
@@ -258,25 +299,50 @@ static BOOL ReadBlueLightStatus(EZBlueLightStatus *status)
 
 + (EZNightShiftState) state
 {
-    if ([self mode] != EZNightShiftModeOff)
+    return [self stateForMode: [self mode] enabled: [self enabled]
+                     override: ReadBlueLightOverride()];
+}
+
+
++ (EZNightShiftState) stateForMode: (EZNightShiftMode) mode
+                           enabled: (BOOL) enabled
+                          override: (NSInteger) override
+{
+    // The daemon's value for an override that turned the tint on. Its value
+    // for one that turned it off, 3, has no state of its own here: that
+    // schedule is still running and comes back on its own, which is Scheduled.
+    static const NSInteger kOverrideTintOn = 4;
+
+    if (enabled && override == kOverrideTintOn)
+        return EZNightShiftUntilTomorrow;
+
+    if (mode != EZNightShiftModeOff)
         return EZNightShiftScheduled;
 
-    return [self enabled] ? EZNightShiftUntilTomorrow : EZNightShiftOff;
+    return enabled ? EZNightShiftUntilTomorrow : EZNightShiftOff;
 }
 
 
 + (BOOL) setState: (EZNightShiftState) state scheduleMode: (EZNightShiftMode) scheduleMode
 {
+    // The checkbox, and only the checkbox: the daemon records the override and
+    // clears it when the schedule next turns the tint off, which is what hands
+    // the tint back to a schedule left running. That holds whether or not the
+    // window covers this minute — measured: the override is recorded either way.
+    if (state == EZNightShiftUntilTomorrow)
+        return [self setEnabled: YES];
+
     // Both dials are written from a known starting point rather than from
     // wherever they happened to be, because each reads through the other.
     // `setEnabled:` with a schedule running does not clear an override, it adds
     // one — measured: `enabled` is YES whenever the window covers this minute,
     // so turning it off inside the window is an override in the other
-    // direction. Dropping the mode first makes `enabled` mean only what the
-    // checkbox says, which is the one state both writes agree about.
+    // direction. Dropping the mode first clears any override, and makes
+    // `enabled` mean only what the checkbox says, which is the one state both
+    // writes agree about.
     if (![self setMode: EZNightShiftModeOff])
         return NO;
-    if (![self setEnabled: state == EZNightShiftUntilTomorrow])
+    if (![self setEnabled: NO])
         return NO;
 
     if (state != EZNightShiftScheduled)
